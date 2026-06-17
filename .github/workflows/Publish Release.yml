@@ -21,6 +21,9 @@ jobs:
     # MUST be windows: pycaw pulls in psutil, which ships a platform-native binary —
     # vendoring on Linux would package the wrong build and break the plugin on Windows.
     runs-on: windows-latest
+    # The default GITHUB_TOKEN is read-only; creating a Release + tag needs contents:write.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
