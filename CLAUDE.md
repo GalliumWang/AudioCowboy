@@ -1,0 +1,127 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+AudioCowboy is a **Flow Launcher plugin** (Windows) that switches the default audio
+input/output device and saves/loads device profiles, all under one action keyword (`ac`)
+with a rofi-style multi-layer menu. Pure Python, no build step. The only first-party code
+is `main.py`, `audio.py`, `profiles.py`, and `tests/` + `tools/` — everything under `lib/`
+is **vendored third-party deps** (pycaw, comtypes, psutil), not to be edited.
+
+## Commands
+
+```bash
+# Offline test suite — runs cross-platform (no Flow, no svcl.exe, no real audio):
+python tests/smoke_test.py        # profiles CRUD, svcl JSON parsing, JSON-RPC wire layer
+
+# Live checks — Windows only, against real devices:
+python tests/inspect_live.py      # read-only: dumps the menus + device lists
+python tests/inspect_actions.py   # save/load/delete in a temp APPDATA (switch is a no-op)
+python tests/diag_default.py      # compares plugin is_default detection vs raw svcl
+
+# Vendor the runtime deps the way CI/release does (needed to run the pycaw backend locally):
+pip install -r requirements.txt -t ./lib
+
+# Add the optional svcl.exe backend (Windows, downloads from NirSoft):
+powershell -File setup.ps1
+```
+
+There is no single-test runner; `smoke_test.py` calls its `test_*` functions directly in
+`__main__`. To run one, edit that block or invoke the function from a REPL.
+
+`smoke_test.py` is the gate that matters for first-party logic — it shells out to `main.py`
+as a subprocess exactly the way Flow does, so it catches wire-format regressions. Run it
+after any change to `main.py` / `audio.py` / `profiles.py`.
+
+## Runtime model (Flow Launcher V1 Python protocol)
+
+Flow invokes `python main.py '<json-request>'` — the request is a single JSON arg in
+`sys.argv[1]`, and the response is a **single JSON object on stdout**. This shapes
+everything:
+
+- `method` routes to a method on the `AudioCowboy` class (`query`, `context_menu`, or an
+  action like `load_profile`). `query`/`context_menu` return a list, wrapped as
+  `{"result": [...]}`. Action methods perform a side effect and may emit **one**
+  `Flow.Launcher.*` follow-up request instead (we use `ShowMsg` for toasts).
+- **Exactly one payload may be written to stdout** — the `_emitted` flag enforces this.
+  Never `print()` to stdout; it corrupts the response. Diagnostics go to stderr only.
+- The whole `query`/`context_menu` handler is wrapped in try/except so the plugin never
+  crashes silently — errors become a result item (queries) or an error toast (actions).
+
+### The single-keyword / drill-down design (don't "fix" it)
+
+There is only one `ActionKeyword` (`ac`), and sub-commands are parsed from the query text
+(`ac o`, `ac i`, `ac s <name>`, `ac p`). This is deliberate: in the V1 Python model the
+request does **not** include which keyword fired, so separate keywords (`aco`/`aci`/…)
+can't be distinguished on an empty query. The nested-menu feel is faked by `drill()`,
+which returns a `Flow.Launcher.ChangeQuery` action that rewrites the search box and keeps
+the window open (`DontHideAfterAction: True`). Splitting into multiple keywords would
+require migrating to the `Python_v2` protocol.
+
+## Architecture
+
+Three first-party modules with a clean split:
+
+- **`main.py`** — JSON-RPC entry, router (`query` → `_*_menu` builders), context menus, and
+  action handlers. `result()`/`drill()` build Flow result items; `_emit()`/`_flow()` are
+  the one-payload stdout writers. Prepends the plugin dir and `lib/` to `sys.path` so
+  imports work regardless of Flow's CWD.
+- **`audio.py`** — backend abstraction with a **two-backend strategy**: NirSoft `svcl.exe`
+  is used if present (checked: `svcl_path` setting → `bin/svcl.exe` → plugin dir →
+  `PATH`), otherwise the pure-Python **pycaw** fallback (feature-detected via
+  `hasattr(AudioUtilities, "SetDefaultDevice")`, requires pycaw ≥ 20251023). Both produce
+  the same normalized device dicts and the same MMDevice endpoint IDs. Errors are
+  `AudioError` / `AudioBackendUnavailable`. svcl results are memoized per process via
+  `_SVCL_CACHE`; `configure()` invalidates it.
+- **`profiles.py`** — `profiles.json` CRUD. Storage lives **outside the plugin folder**
+  (`%APPDATA%\FlowLauncher\Settings\Plugins\AudioCowboy\`) because Flow wipes the install
+  dir on every update. Writes are atomic (temp file + `os.replace`); corrupt/invalid JSON
+  is backed up to `.bak` rather than clobbered, and `load()` never raises.
+
+### Invariants that pervade the code
+
+- **Device identity is the MMDevice endpoint ID** (e.g. `{0.0.0.00000000}.{guid}`), never
+  the friendly name — stable across reboots and unique even for two identical headsets.
+  Profiles persist the id; friendly names are display-only labels.
+- **svcl exit codes are unreliable.** After any `set_default`, the code re-reads the
+  device list to *verify* the default actually changed (`_is_now_default`, and the retry
+  loop in `load_profile`), retrying a few times because the change can lag the process
+  exit. Verified state — not the return code — is the source of truth. Outcomes are
+  reported honestly as applied / unverified / failed / absent.
+- "Set default" means **all three roles** (Console + Multimedia + Communications) so
+  Teams/Discord/Zoom follow; `role="2"` / comm-only is a separate context-menu action.
+  The pycaw fallback cannot read the *communications* default, so comm verification
+  returns `None` (unverifiable) there.
+
+## Packaging & release
+
+`.github/workflows/Publish Release.yml` runs on push to `main` (ignoring docs/tests/md),
+**on `windows-latest`** (required — pycaw pulls in psutil, which ships a platform-native
+binary; vendoring on Linux would package the wrong build). It re-vendors `lib/` from
+`requirements.txt`, then zips `plugin.json` + the three modules + `SettingsTemplate.yaml`
++ `README.md` + `Images` + `lib` into `Flow.Launcher.Plugin.AudioCowboy.zip` with
+`plugin.json at the zip root`, and cuts a GitHub Release tagged `v<Version>`.
+
+- **To ship an update**: bump `Version` in `plugin.json`, commit, push to `main`. The
+  manifest auto-updater (~every 3h) picks up the higher version. First-ever listing needs
+  one manual PR to `Flow.Launcher.PluginsManifest` — see `publish/PUBLISHING.md`.
+- `bin/svcl.exe` and `lib/` are git-ignored; the release rebuilds `lib/`, and the store
+  build ships **without** svcl.exe (pycaw only).
+- The repo is **`True347/AudioCowboy`** (not the conventional `Flow.Launcher.Plugin.*`
+  name). All GitHub/jsdelivr URLs in `plugin.json`, `publish/*.json`, and `README.md`
+  point at it; only the release **zip asset** keeps the conventional name
+  `Flow.Launcher.Plugin.AudioCowboy.zip`.
+- Commits use the GitHub noreply identity (`211762551+True347@users.noreply.github.com`),
+  never a personal email — the repo is public-bound for the Flow plugin store.
+
+## Constraints to respect
+
+- Target the embedded Python that ships with Flow (CI pins **3.11**). The code style is
+  intentionally conservative (`%`-formatting, `class X(object)`, broad guards) to run on
+  that interpreter — match it.
+- Keep `KEYWORD` in `main.py`, `ActionKeyword` in `plugin.json`, and `PLUGIN_NAME` in
+  `profiles.py` in sync (they're cross-referenced by comments for this reason).
+- Icon paths in result items are repo-relative (`Images/…`); `ShowMsg` toasts need an
+  **absolute** path, hence the `_abs()` helper.

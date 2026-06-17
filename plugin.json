@@ -1,0 +1,12 @@
+{
+  "ID": "54dcf7b098df441ab7c2ad6b11c047cc",
+  "ActionKeyword": "ac",
+  "Name": "AudioCowboy",
+  "Description": "Quickly switch the default audio input/output device, and save device profiles. Type 'ac' for a menu.",
+  "Author": "True347",
+  "Version": "1.0.0",
+  "Language": "python",
+  "Website": "https://github.com/True347/AudioCowboy",
+  "IcoPath": "Images/app.png",
+  "ExecuteFileName": "main.py"
+}

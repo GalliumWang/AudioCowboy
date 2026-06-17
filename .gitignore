@@ -1,0 +1,19 @@
+# Bundled NirSoft binary (download via setup.ps1; not redistributed in the repo)
+bin/svcl.exe
+bin/*.exe
+
+# Vendored optional Python deps
+lib/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/

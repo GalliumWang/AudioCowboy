@@ -1,0 +1,58 @@
+name: Publish Release
+
+# Builds the distributable plugin zip and publishes a GitHub Release tagged to the
+# Version in plugin.json. The Flow PluginsManifest auto-updater picks up new releases
+# (~every 3h) once the plugin is listed, so after the first manual manifest PR you only
+# ever need to bump Version + push.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'tests/**'
+      - 'tools/**'
+      - '.github/**'
+
+jobs:
+  publish:
+    # MUST be windows: pycaw pulls in psutil, which ships a platform-native binary —
+    # vendoring on Linux would package the wrong build and break the plugin on Windows.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # match Flow Launcher's embedded Python major.minor
+
+      - name: Read version from plugin.json
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content plugin.json -Raw | ConvertFrom-Json).Version
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Version: $v"
+
+      - name: Vendor dependencies into lib/
+        run: pip install -r requirements.txt -t ./lib
+
+      - name: Package plugin zip (plugin.json at zip root)
+        shell: pwsh
+        run: |
+          $items = @('plugin.json','main.py','audio.py','profiles.py',
+                     'SettingsTemplate.yaml','README.md','Images','lib')
+          $zip = 'Flow.Launcher.Plugin.AudioCowboy.zip'
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $items -DestinationPath $zip -Force
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: 'Flow.Launcher.Plugin.AudioCowboy.zip'
+          tag_name: "v${{ steps.version.outputs.version }}"
+          name: "AudioCowboy v${{ steps.version.outputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
