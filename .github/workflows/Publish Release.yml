@@ -25,9 +25,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'   # match Flow Launcher's embedded Python major.minor
 
@@ -52,7 +52,7 @@ jobs:
           Compress-Archive -Path $items -DestinationPath $zip -Force
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: 'Flow.Launcher.Plugin.AudioCowboy.zip'
           tag_name: "v${{ steps.version.outputs.version }}"
