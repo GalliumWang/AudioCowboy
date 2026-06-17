@@ -39,8 +39,8 @@ In Flow: `pm install https://github.com/True347/AudioCowboy/releases/download/v1
 Restart Flow, type `ac`, confirm switching works **without** svcl.exe present.
 
 ## 4. Submit the manifest PR (first time only)
-1. Fork **https://github.com/Flow-Launcher/Flow.Launcher.PluginsManifest** (work on the
-   default branch — currently `plugin_api_v2`).
+1. Fork **https://github.com/Flow-Launcher/Flow.Launcher.PluginsManifest** and branch off
+   its default branch (`main`).
 2. Add the file **`plugins/AudioCowboy-54dcf7b098df441ab7c2ad6b11c047cc.json`** — copy
    it from `publish/AudioCowboy-54dcf7b098df441ab7c2ad6b11c047cc.json` in this repo.
    Verify every URL resolves (the release zip and the jsdelivr icon URL must be live).
