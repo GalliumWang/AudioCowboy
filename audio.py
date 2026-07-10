@@ -17,6 +17,7 @@ import os
 import json
 import tempfile
 import subprocess
+import warnings
 
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -252,7 +253,12 @@ def get_devices(include_inactive=False):
     if svcl_available():
         return _svcl_devices(include_inactive)
     if _pycaw_ready():
-        return _pycaw_devices(include_inactive)
+        # pycaw warns (to stderr) when an endpoint's properties raise a COMError — seen
+        # with some JBL / virtual-audio devices. Flow treats ANY stderr as fatal, so
+        # contain those warnings here (main.py also suppresses globally as a backstop).
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return _pycaw_devices(include_inactive)
     raise AudioBackendUnavailable("svcl.exe not found and pycaw unavailable")
 
 
@@ -261,7 +267,9 @@ def set_default(item_id, role="all"):
     if svcl_available():
         return _svcl_set_default(item_id, role)
     if _pycaw_ready():
-        return _pycaw_set_default(item_id, role)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return _pycaw_set_default(item_id, role)
     raise AudioBackendUnavailable("svcl.exe not found and pycaw unavailable")
 
 

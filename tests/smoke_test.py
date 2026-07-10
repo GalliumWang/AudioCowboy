@@ -104,6 +104,29 @@ def test_audio_helpers():
     print("OK  audio parsing + helpers")
 
 
+def test_pycaw_warning_suppressed():
+    """A pycaw warning (as a quirky JBL/virtual endpoint triggers) must never escape
+    get_devices() — Flow treats any plugin stderr as fatal (InvalidDataException)."""
+    import warnings
+    import audio
+    importlib.reload(audio)
+
+    def _warn_then_return(include_inactive=False):
+        warnings.warn("COMError attempting to get property 67", UserWarning)
+        return []
+
+    audio.svcl_available = lambda: False      # force the pycaw branch
+    audio._pycaw_ready = lambda: True
+    audio._pycaw_devices = _warn_then_return
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        devices = audio.get_devices()
+    assert devices == []
+    assert not caught, "pycaw warning leaked past get_devices() (fatal to Flow)"
+    print("OK  pycaw warning suppressed (stderr stays clean)")
+
+
 def run_main(req):
     proc = subprocess.run(
         [sys.executable, os.path.join(ROOT, "main.py"), json.dumps(req)],
@@ -161,5 +184,6 @@ if __name__ == "__main__":
     test_profiles()
     test_corruption_backup()
     test_audio_helpers()
+    test_pycaw_warning_suppressed()
     test_wire()
     print("\nALL PASS")

@@ -46,7 +46,13 @@ everything:
   `{"result": [...]}`. Action methods perform a side effect and may emit **one**
   `Flow.Launcher.*` follow-up request instead (we use `ShowMsg` for toasts).
 - **Exactly one payload may be written to stdout** — the `_emitted` flag enforces this.
-  Never `print()` to stdout; it corrupts the response. Diagnostics go to stderr only.
+  Never `print()` to stdout; it corrupts the response.
+- **Flow raises `InvalidDataException` on ANY stderr output** — a single non-fatal warning
+  kills every query. This bit us in v1.0.1: pycaw warns (to stderr) when a device's
+  properties raise a COMError (some JBL / virtual-audio endpoints do). So warnings are
+  suppressed globally (`warnings.filterwarnings("ignore")` in `main.py`) plus a
+  `catch_warnings` guard around the pycaw calls in `audio.py`. The plugin must never write
+  to stderr; surface diagnostics via result items / `ShowMsg` instead.
 - The whole `query`/`context_menu` handler is wrapped in try/except so the plugin never
   crashes silently — errors become a result item (queries) or an error toast (actions).
 

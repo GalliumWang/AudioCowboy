@@ -21,6 +21,14 @@ import os
 import sys
 import json
 import time
+import warnings
+
+# Flow Launcher raises InvalidDataException if a plugin writes ANYTHING to stderr, so a
+# single non-fatal warning kills every query. Third-party backends emit such warnings —
+# pycaw warns (to stderr) when a quirky endpoint's properties raise a COMError, as some
+# JBL / virtual-audio drivers cause. Silence Python warnings so they never reach stderr;
+# user-facing diagnostics use result items / ShowMsg, never stderr.
+warnings.filterwarnings("ignore")
 
 # Make sibling modules + any vendored deps importable regardless of the CWD Flow uses.
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
