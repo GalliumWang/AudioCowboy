@@ -17,3 +17,6 @@ Thumbs.db
 .DS_Store
 .idea/
 .vscode/
+
+# Local working notes / external AI reviews (not part of the plugin)
+*-review.md

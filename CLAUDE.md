@@ -107,7 +107,7 @@ Three first-party modules with a clean split:
 **on `windows-latest`** (required — pycaw pulls in psutil, which ships a platform-native
 binary; vendoring on Linux would package the wrong build). It re-vendors `lib/` from
 `requirements.txt`, then zips `plugin.json` + the three modules + `SettingsTemplate.yaml`
-+ `README.md` + `Images` + `lib` into `Flow.Launcher.Plugin.AudioCowboy.zip` with
++ `README.md` + `LICENSE` + `Images` + `lib` into `Flow.Launcher.Plugin.AudioCowboy.zip` with
 `plugin.json at the zip root`, and cuts a GitHub Release tagged `v<Version>`.
 
 - **To ship an update**: bump `Version` in `plugin.json`, commit, push to `main`. The

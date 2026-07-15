@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $items = @('plugin.json','main.py','audio.py','profiles.py',
-                     'SettingsTemplate.yaml','README.md','Images','lib')
+                     'SettingsTemplate.yaml','README.md','LICENSE','Images','lib')
           $zip = 'Flow.Launcher.Plugin.AudioCowboy.zip'
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path $items -DestinationPath $zip -Force
