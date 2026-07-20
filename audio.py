@@ -1,13 +1,16 @@
 """Audio backend for AudioCowboy.
 
-Primary mechanism: NirSoft ``svcl.exe`` (SoundVolumeCommandLine) — lists devices as
-JSON and sets the default render/capture device for all roles. There is no public
-Windows API to *set* the default device, so every tool wraps the undocumented
-``IPolicyConfig`` COM interface; svcl is the battle-tested wrapper we bundle.
+Default mechanism: ``pycaw`` (>= 20251023, which added ``AudioUtilities.SetDefaultDevice``),
+vendored into ``lib/`` and shipped in the release — pure Python, no external executable.
+There is no public Windows API to *set* the default device, so every tool wraps the
+undocumented ``IPolicyConfig`` COM interface; pycaw does it in-process. It is
+feature-detected and fully guarded, so a missing/old pycaw degrades to the "backend
+missing" path rather than raising.
 
-Optional fallback: ``pycaw`` (>= 20251023, which added ``AudioUtilities.SetDefaultDevice``)
-is used only when svcl.exe is unavailable *and* pycaw is importable. It is feature-detected
-and fully guarded, so a missing/old pycaw simply degrades to the "backend missing" path.
+Optional: NirSoft ``svcl.exe`` (SoundVolumeCommandLine) is used *instead* when present
+(``svcl_path`` setting -> ``bin/svcl.exe`` -> plugin dir -> PATH). It is not redistributed
+(antivirus false positives) and is not required; it is slower than pycaw (subprocess +
+temp-file round trip) but can read the *communications* default, which pycaw cannot.
 
 Device identity is the Windows MMDevice endpoint ID string (svcl "Item ID",
 pycaw ``device.id``), e.g. ``{0.0.0.00000000}.{guid}`` — stable across reboots and
@@ -30,7 +33,7 @@ _COLUMNS = (
     "Default Communications,Item ID,Command-Line Friendly ID,Device State"
 )
 
-# Set by configure(); lets the user point at a non-bundled svcl.exe via settings.
+# Set by configure(); lets the user point at an svcl.exe kept outside the plugin folder.
 _SVCL_OVERRIDE = None
 
 
@@ -39,7 +42,7 @@ class AudioError(Exception):
 
 
 class AudioBackendUnavailable(AudioError):
-    """No usable backend (no svcl.exe and no working pycaw)."""
+    """No usable backend — pycaw failed to load and no optional svcl.exe was found."""
 
 
 _SVCL_CACHE = (False, None)  # (resolved?, path)
@@ -172,7 +175,8 @@ def _svcl_set_default(item_id, role="all"):
 
 
 # --------------------------------------------------------------------------- #
-# pycaw fallback (optional, guarded — only used when svcl is unavailable)
+# pycaw backend — the default, and the only backend shipped in the release (guarded /
+# feature-detected). Used unless the user supplied an optional svcl.exe.
 # --------------------------------------------------------------------------- #
 def _pycaw_ready():
     try:
@@ -246,7 +250,7 @@ def _pycaw_set_default(item_id, role="all"):
 
 
 # --------------------------------------------------------------------------- #
-# Public API (svcl first, pycaw fallback)
+# Public API — a user-supplied svcl.exe wins if present; otherwise pycaw, the shipped default
 # --------------------------------------------------------------------------- #
 def get_devices(include_inactive=False):
     """Return all render+capture endpoint devices (one backend call)."""
@@ -259,7 +263,7 @@ def get_devices(include_inactive=False):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return _pycaw_devices(include_inactive)
-    raise AudioBackendUnavailable("svcl.exe not found and pycaw unavailable")
+    raise AudioBackendUnavailable("pycaw backend unavailable (and no optional svcl.exe found)")
 
 
 def set_default(item_id, role="all"):
@@ -270,7 +274,7 @@ def set_default(item_id, role="all"):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return _pycaw_set_default(item_id, role)
-    raise AudioBackendUnavailable("svcl.exe not found and pycaw unavailable")
+    raise AudioBackendUnavailable("pycaw backend unavailable (and no optional svcl.exe found)")
 
 
 def split_by_direction(devices):

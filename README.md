@@ -46,9 +46,10 @@ The release zip bundles the pure-Python backend (`lib/`), so it works out of the
 no setup step. Restart Flow (or reload plugins) and type `ac`.
 
 **Manual / from source** (developers): copy the folder into
-`%APPDATA%\FlowLauncher\Plugins\AudioCowboy\`, then either vendor
-the backend with `pip install -r requirements.txt -t lib`, **or** run
-`powershell -File setup.ps1` to add the optional `bin\svcl.exe` instead. Restart Flow.
+`%APPDATA%\FlowLauncher\Plugins\AudioCowboy\`, then vendor the backend with
+`pip install -r requirements.txt -t lib`. Restart Flow.
+Optional: `powershell -File setup.ps1` adds `bin\svcl.exe`, which is used in preference
+to pycaw when present.
 
 ---
 
@@ -97,15 +98,17 @@ Writes are atomic (temp file + `os.replace`), so a crash mid-write can't corrupt
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `svcl_path` | *(empty)* | Override the path to `svcl.exe`. Empty = use bundled `bin\svcl.exe`. |
+| `svcl_path` | *(empty)* | Path to an optional `svcl.exe`. Empty = auto-detect: `bin\svcl.exe`, then the plugin folder, then `PATH`. If none is found, the bundled pycaw backend is used. |
 | `show_disconnected` | off | Also list unplugged / disabled endpoints. |
 
 ---
 
 ## Troubleshooting
 
-- **"⚠ svcl.exe not found"** — run `setup.ps1`, or set `svcl_path` in the plugin settings.
-- **Antivirus flags `svcl.exe`** — it's a NirSoft false positive; allow it, or supply your own copy.
+- **"⚠ Audio backend unavailable"** — the bundled pycaw backend (in `lib/`) failed to load;
+  reinstall the plugin. Running from source? Vendor it with `pip install -r requirements.txt -t lib`.
+- **Antivirus flags `svcl.exe`** — it's a NirSoft false positive; allow it, or just don't install
+  it (it's optional — the release doesn't ship it).
 - **A device won't switch** — make sure it's *Active* (plugged in / enabled) in Windows Sound settings.
 - **Nothing happens / errors** — check Flow's logs at `%APPDATA%\FlowLauncher\Logs\`.
 
@@ -116,7 +119,7 @@ Writes are atomic (temp file + `os.replace`), so a crash mid-write can't corrupt
 | Backend | When used | Notes |
 |---|---|---|
 | **pycaw** (default) | always, unless svcl.exe is present | [`pycaw`](https://github.com/AndreMiras/pycaw) `>= 20251023` (added `SetDefaultDevice`) + `comtypes`. Pure Python — vendored into `lib/`. This is what ships in the release. |
-| **svcl.exe** (optional) | if `bin\svcl.exe` exists or it's on `PATH`, or `svcl_path` is set | NirSoft SoundVolumeCommandLine. Add via `setup.ps1`. Not redistributed (AV false positives). |
+| **svcl.exe** (optional) | if `bin\svcl.exe` exists or it's on `PATH`, or `svcl_path` is set | NirSoft SoundVolumeCommandLine. Add it manually, or run `setup.ps1` from the source repo (it isn't in the release zip). Not redistributed (AV false positives). |
 
 Both produce the same MMDevice endpoint IDs, so profiles are interchangeable between them.
 
@@ -129,10 +132,10 @@ To publish to the Flow plugin store, see [publish/PUBLISHING.md](publish/PUBLISH
 ```
 plugin.json          # manifest (keyword: ac, Language: python)
 main.py              # JSON-RPC entry + router + actions
-audio.py             # svcl.exe backend (+ optional pycaw fallback)
+audio.py             # pycaw backend (+ optional svcl.exe backend)
 profiles.py          # profiles.json CRUD (atomic, update-safe path)
 SettingsTemplate.yaml
-setup.ps1            # downloads bin/svcl.exe
+setup.ps1            # downloads the optional bin/svcl.exe (not shipped in the release)
 Images/              # icon set
 tools/gen_icons.py   # regenerate icons (Pillow)
 tests/               # smoke_test.py (offline) + inspect_live.py / inspect_actions.py
@@ -165,6 +168,7 @@ require the newer `Python_v2` protocol.)
 
 ## Credits
 
-- [NirSoft SoundVolumeView / svcl](https://www.nirsoft.net/utils/sound_volume_command_line.html) — the audio-switching backend.
+- [pycaw](https://github.com/AndreMiras/pycaw) — the pure-Python Core Audio backend that ships with the plugin.
+- [NirSoft SoundVolumeView / svcl](https://www.nirsoft.net/utils/sound_volume_command_line.html) — optional alternative backend.
 - [Flow Launcher](https://github.com/Flow-Launcher/Flow.Launcher) — the launcher and plugin API.
 - Inspired by [SoundSwitch](https://github.com/Belphemur/SoundSwitch) and rofi audio-menu workflows.

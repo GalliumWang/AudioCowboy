@@ -1,5 +1,8 @@
 """Read-only diagnostic: compare the plugin's is_default detection against raw svcl.
 
+Requires the OPTIONAL svcl.exe (see setup.ps1) — it diffs our parsing against raw svcl
+output, so it cannot run on a pycaw-only install (which is what the release ships).
+
     python tests/diag_default.py
 """
 import os
@@ -20,6 +23,10 @@ for d in audio.get_devices(include_inactive=True):
 
 print("\n=== raw svcl 'Device' rows ===")
 exe = audio.find_svcl()
+if not exe:
+    print("  svcl.exe not found — this diagnostic needs the optional svcl backend "
+          "(setup.ps1). The plugin itself runs fine on pycaw alone.")
+    sys.exit(0)
 fd, tmp = tempfile.mkstemp(suffix=".json")
 os.close(fd)
 subprocess.run([exe, "/sjson", tmp, "/Columns",

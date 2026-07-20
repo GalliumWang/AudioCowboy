@@ -74,10 +74,11 @@ Three first-party modules with a clean split:
   action handlers. `result()`/`drill()` build Flow result items; `_emit()`/`_flow()` are
   the one-payload stdout writers. Prepends the plugin dir and `lib/` to `sys.path` so
   imports work regardless of Flow's CWD.
-- **`audio.py`** — backend abstraction with a **two-backend strategy**: NirSoft `svcl.exe`
-  is used if present (checked: `svcl_path` setting → `bin/svcl.exe` → plugin dir →
-  `PATH`), otherwise the pure-Python **pycaw** fallback (feature-detected via
-  `hasattr(AudioUtilities, "SetDefaultDevice")`, requires pycaw ≥ 20251023). Both produce
+- **`audio.py`** — backend abstraction with a **two-backend strategy**: the pure-Python
+  **pycaw** backend (vendored into `lib/`) is the default and the only one ever shipped —
+  feature-detected via `hasattr(AudioUtilities, "SetDefaultDevice")`, requires pycaw ≥
+  20251023. An **optional** user-supplied NirSoft `svcl.exe` overrides it when found
+  (checked: `svcl_path` setting → `bin/svcl.exe` → plugin dir → `PATH`). Both produce
   the same normalized device dicts and the same MMDevice endpoint IDs. Errors are
   `AudioError` / `AudioBackendUnavailable`. svcl results are memoized per process via
   `_SVCL_CACHE`; `configure()` invalidates it.
@@ -98,8 +99,8 @@ Three first-party modules with a clean split:
   reported honestly as applied / unverified / failed / absent.
 - "Set default" means **all three roles** (Console + Multimedia + Communications) so
   Teams/Discord/Zoom follow; `role="2"` / comm-only is a separate context-menu action.
-  The pycaw fallback cannot read the *communications* default, so comm verification
-  returns `None` (unverifiable) there.
+  The pycaw backend cannot read the *communications* default, so comm verification
+  returns `None` (unverifiable) there — which is the shipped configuration.
 
 ## Packaging & release
 

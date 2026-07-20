@@ -165,8 +165,8 @@ def test_wire():
     top = json.loads(run_main({"method": "query", "parameters": [""], "settings": {}})[0])
     drill_items = [r for r in top["result"]
                    if r.get("JsonRPCAction", {}).get("method") == "Flow.Launcher.ChangeQuery"]
-    # top menu has drill items only when a backend is present; if backend missing it's a
-    # single "svcl.exe not found" item — accept either, but if drills exist, validate them.
+    # top menu has drill items only when a backend is present; if pycaw failed to load it's
+    # a single "⚠ Audio backend unavailable" item — accept either, but validate any drills.
     for r in drill_items:
         act = r["JsonRPCAction"]
         assert act["parameters"][0].startswith("ac ")

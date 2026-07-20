@@ -332,10 +332,17 @@ class AudioCowboy(object):
     def _backend_missing(self):
         return result(
             "⚠ Audio backend unavailable",
-            "Could not load pycaw and no svcl.exe was found. Try reinstalling the plugin "
-            "(or run setup.ps1 to add svcl.exe). Press Enter to open the plugin folder.",
+            "Could not load the bundled pycaw backend. Try reinstalling the plugin. "
+            "Press Enter to open the plugin folder.",
             ICON_WARN,
             method="Flow.Launcher.OpenDirectory", params=[PLUGIN_DIR])
+
+    def _backend_missing_toast(self):
+        # Reached only when *neither* backend loaded. The release ships pycaw, so the
+        # real cause is a broken/absent lib/ — never "svcl.exe is missing".
+        self.show_msg("Audio backend unavailable",
+                      "Could not load the bundled pycaw backend. Try reinstalling the plugin.",
+                      _abs(ICON_ERROR))
 
     # ------------------------------------------------------------------ #
     # actions
@@ -355,13 +362,14 @@ class AudioCowboy(object):
         try:
             ok = audio.set_default(item_id, role)
         except audio.AudioBackendUnavailable:
-            self.show_msg("svcl.exe not found", "Run setup.ps1 to install it.", _abs(ICON_ERROR))
+            self._backend_missing_toast()
             return
         except Exception as exc:
             self.show_msg("Failed to set %s device" % label.lower(), str(exc), _abs(ICON_ERROR))
             return
-        # Confirm via toast, then the window closes (like applying a profile). Verify by
-        # re-reading defaults (svcl exit codes are unreliable); fall back to the exit code.
+        # Confirm via toast, then the window closes (like applying a profile). A backend
+        # reporting success is not proof: re-read the defaults and let that decide; the
+        # backend's own return value is only the fallback when the read-back fails.
         verified = self._is_now_default(item_id, direction, comm=comm)
         ok_icon = ICON_OUT if direction == "render" else ICON_IN
         if verified is True:
@@ -379,11 +387,12 @@ class AudioCowboy(object):
     def _is_now_default(self, item_id, direction, comm=False, retries=3):
         """True/False if the device is/ isn't the default now; None if unverifiable.
 
-        The default change can lag a touch behind svcl's exit, so re-read a few times
-        before concluding it didn't take. The success case returns on the first read.
+        Windows can apply the change a touch after the backend call returns, so re-read
+        a few times before concluding it didn't take. The success case returns on the
+        first read.
         """
         if comm and not audio.svcl_available():
-            return None  # the pycaw fallback can't report the communications default
+            return None  # pycaw can't report the communications default; say so, don't guess
         for attempt in range(retries):
             try:
                 devices = audio.get_devices(include_inactive=True)
@@ -403,7 +412,7 @@ class AudioCowboy(object):
             # Always read the full set so an inactive current default isn't dropped.
             devices = audio.get_devices(include_inactive=True)
         except audio.AudioBackendUnavailable:
-            self.show_msg("svcl.exe not found", "Run setup.ps1 to install it.", _abs(ICON_ERROR))
+            self._backend_missing_toast()
             return
         except Exception as exc:
             self.show_msg("Failed to read current devices", str(exc), _abs(ICON_ERROR))
@@ -435,21 +444,21 @@ class AudioCowboy(object):
             self.show_msg("Profile “%s” is empty" % name, "Nothing to apply", _abs(ICON_WARN))
             return
 
-        # Set each device. Only a raised exception is a hard failure; the unreliable
-        # svcl exit code is ignored — verification (below) is the source of truth.
+        # Set each device. Only a raised exception is a hard failure; the backend's own
+        # success value is ignored — verification (below) is the source of truth.
         set_error = set()
         for endpoint_id, _direction, _label in targets:
             try:
                 audio.set_default(endpoint_id, "all")
             except audio.AudioBackendUnavailable:
-                self.show_msg("svcl.exe not found", "Run setup.ps1 to install it.", _abs(ICON_ERROR))
+                self._backend_missing_toast()
                 return
             except Exception:
                 set_error.add(endpoint_id)
 
         # Verify by re-reading the defaults; retry while any *present* target hasn't
-        # become default yet (the change can lag svcl's exit). Drive the retry off the
-        # verified state, NOT set_ok — svcl exit codes are unreliable, so a set that
+        # become default yet (Windows can apply it just after the call returns). Drive the
+        # retry off the verified state, NOT the backend's return value — a set that
         # reported failure but actually lands a moment later must still be caught.
         devices = None
         for attempt in range(3):

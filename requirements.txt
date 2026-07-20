@@ -1,9 +1,9 @@
-# Audio backend: pycaw (pure Python) is the default for the store build — it needs no
-# external EXE. comtypes is its COM bridge. Both are pure Python, so the CI vendors them
-# into ./lib (pip install -r requirements.txt -t ./lib) and main.py adds lib/ to sys.path.
-# SetDefaultDevice requires pycaw >= 20251023.
+# Audio backend: pycaw (pure Python) is THE backend — the only one ever shipped, in every
+# build. It needs no external EXE. comtypes is its COM bridge. Both are pure Python, so the
+# CI vendors them into ./lib (pip install -r requirements.txt -t ./lib) and main.py adds
+# lib/ to sys.path. SetDefaultDevice requires pycaw >= 20251023.
 #
-# A NirSoft svcl.exe backend is still used automatically if svcl.exe is present
-# (bin/svcl.exe or on PATH) — see audio.py / setup.ps1 for the optional manual route.
+# If a user manually adds an optional NirSoft svcl.exe (bin/svcl.exe, the plugin folder,
+# PATH, or the svcl_path setting), audio.py prefers it. It is never shipped — see setup.ps1.
 pycaw>=20251023
 comtypes

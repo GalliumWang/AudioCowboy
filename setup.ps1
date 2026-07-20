@@ -1,11 +1,13 @@
 <#
 .SYNOPSIS
-    Download NirSoft svcl.exe (SoundVolumeCommandLine) into .\bin for AudioCowboy.
+    OPTIONAL: download NirSoft svcl.exe (SoundVolumeCommandLine) into .\bin.
 
 .DESCRIPTION
-    AudioCowboy switches the default audio device via svcl.exe. NirSoft tools are
-    redistributable but not bundled in this repo. Run this once after installing
-    the plugin (or any time bin\svcl.exe is missing).
+    AudioCowboy switches devices with the bundled pure-Python pycaw backend and needs
+    no external executable — this script is not required for normal use. It adds an
+    svcl.exe which, when present, is used in preference to pycaw; the only thing that
+    buys you is reading the *communications* default, which pycaw cannot report.
+    svcl.exe is never shipped in the release zip.
 
 .NOTES
     NirSoft executables are closed-source freeware and may trigger antivirus false
@@ -50,7 +52,7 @@ try { Unblock-File -Path $dest } catch {}
 
 if (Test-Path $dest) {
     Write-Host "Done. svcl.exe installed at $dest" -ForegroundColor Green
-    Write-Host "Restart Flow Launcher (or reload plugins) and type 'ac' to use AudioCowboy."
+    Write-Host "Restart Flow Launcher (or reload plugins). AudioCowboy will now prefer svcl.exe over the built-in pycaw backend."
 } else {
     throw "Failed to install svcl.exe."
 }
