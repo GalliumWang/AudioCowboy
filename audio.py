@@ -1,40 +1,17 @@
 """Audio backend for AudioCowboy.
 
-Default mechanism: ``pycaw`` (>= 20251023, which added ``AudioUtilities.SetDefaultDevice``),
+Backend: ``pycaw`` (>= 20251023, which added ``AudioUtilities.SetDefaultDevice``),
 vendored into ``lib/`` and shipped in the release — pure Python, no external executable.
 There is no public Windows API to *set* the default device, so every tool wraps the
 undocumented ``IPolicyConfig`` COM interface; pycaw does it in-process. It is
 feature-detected and fully guarded, so a missing/old pycaw degrades to the "backend
 missing" path rather than raising.
 
-Optional: NirSoft ``svcl.exe`` (SoundVolumeCommandLine) is used *instead* when present
-(``svcl_path`` setting -> ``bin/svcl.exe`` -> plugin dir -> PATH). It is not redistributed
-(antivirus false positives) and is not required; it is slower than pycaw (subprocess +
-temp-file round trip) but can read the *communications* default, which pycaw cannot.
-
-Device identity is the Windows MMDevice endpoint ID string (svcl "Item ID",
-pycaw ``device.id``), e.g. ``{0.0.0.00000000}.{guid}`` — stable across reboots and
-unique even for two identical devices. Profiles persist this id, never the name.
+Device identity is the Windows MMDevice endpoint ID string (pycaw ``device.id``),
+e.g. ``{0.0.0.00000000}.{guid}`` — stable across reboots and unique even for two
+identical devices. Profiles persist this id, never the name.
 """
-import os
-import json
-import tempfile
-import subprocess
 import warnings
-
-PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Windows: don't flash a console window when spawning svcl.exe.
-_CREATE_NO_WINDOW = 0x08000000
-
-# Columns we ask svcl to emit; the header strings become the JSON keys.
-_COLUMNS = (
-    "Name,Type,Direction,Device Name,Default,Default Multimedia,"
-    "Default Communications,Item ID,Command-Line Friendly ID,Device State"
-)
-
-# Set by configure(); lets the user point at an svcl.exe kept outside the plugin folder.
-_SVCL_OVERRIDE = None
 
 
 class AudioError(Exception):
@@ -42,141 +19,11 @@ class AudioError(Exception):
 
 
 class AudioBackendUnavailable(AudioError):
-    """No usable backend — pycaw failed to load and no optional svcl.exe was found."""
-
-
-_SVCL_CACHE = (False, None)  # (resolved?, path)
-
-
-def configure(svcl_path=None):
-    """Apply runtime settings (called from the plugin before each operation)."""
-    global _SVCL_OVERRIDE, _SVCL_CACHE
-    _SVCL_OVERRIDE = (svcl_path or "").strip() or None
-    _SVCL_CACHE = (False, None)  # override may have changed; invalidate cache
+    """No usable backend — the pycaw backend failed to load."""
 
 
 # --------------------------------------------------------------------------- #
-# svcl.exe discovery
-# --------------------------------------------------------------------------- #
-def find_svcl():
-    """Return an absolute path to svcl.exe, or None if not found (memoized per process)."""
-    global _SVCL_CACHE
-    resolved, path = _SVCL_CACHE
-    if resolved:
-        return path
-    candidates = []
-    if _SVCL_OVERRIDE:
-        candidates.append(_SVCL_OVERRIDE)
-    candidates.append(os.path.join(PLUGIN_DIR, "bin", "svcl.exe"))
-    candidates.append(os.path.join(PLUGIN_DIR, "svcl.exe"))
-    found = None
-    for c in candidates:
-        if c and os.path.isfile(c):
-            found = c
-            break
-    if found is None:
-        from shutil import which  # last resort: rely on PATH
-        found = which("svcl.exe")
-    _SVCL_CACHE = (True, found)
-    return found
-
-
-def svcl_available():
-    return find_svcl() is not None
-
-
-def _run_svcl(args):
-    exe = find_svcl()
-    if not exe:
-        raise AudioBackendUnavailable("svcl.exe not found")
-    try:
-        return subprocess.run(
-            [exe] + list(args),
-            capture_output=True,
-            creationflags=_CREATE_NO_WINDOW,
-            timeout=20,
-        )
-    except FileNotFoundError:
-        raise AudioBackendUnavailable("svcl.exe not found at %s" % exe)
-    except subprocess.TimeoutExpired:
-        raise AudioError("svcl.exe timed out")
-
-
-def _truthy(value):
-    return bool((value or "").strip())
-
-
-def _parse_entry(e):
-    name = (e.get("Name") or "").strip()
-    devname = (e.get("Device Name") or "").strip()
-    direction_raw = (e.get("Direction") or "").strip().lower()
-    if devname and devname.lower() != name.lower():
-        friendly = "%s (%s)" % (name, devname)
-    else:
-        friendly = name
-    return {
-        "id": (e.get("Item ID") or "").strip(),
-        "name": name,
-        "device_name": devname,
-        "friendly": friendly or name or "(unnamed device)",
-        "direction": "render" if direction_raw == "render"
-                     else ("capture" if direction_raw == "capture" else direction_raw),
-        "is_default": _truthy(e.get("Default")) or _truthy(e.get("Default Multimedia")),
-        "is_default_comm": _truthy(e.get("Default Communications")),
-        "state": (e.get("Device State") or "").strip(),
-        "cmd_id": (e.get("Command-Line Friendly ID") or "").strip(),
-    }
-
-
-def _svcl_devices(include_inactive=False):
-    # svcl does NOT honour the empty-filename "write to stdout" convention, so we
-    # export to a temp file (UTF-8 with BOM) and read it back.
-    fd, tmp = tempfile.mkstemp(prefix="acowboy-", suffix=".json")
-    os.close(fd)
-    try:
-        proc = _run_svcl(["/sjson", tmp, "/Columns", _COLUMNS])
-        try:
-            with open(tmp, "rb") as fh:
-                raw_bytes = fh.read()
-        except OSError:
-            raw_bytes = b""
-    finally:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-    text = raw_bytes.decode("utf-8-sig", errors="replace").strip()
-    if not text:
-        # NirSoft exit codes are unreliable, so empty output (not "[]") is our
-        # real signal that svcl failed — surface it instead of faking "no devices".
-        err = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
-        raise AudioError("svcl produced no output (exit %s)%s"
-                         % (proc.returncode, (": " + err) if err else ""))
-    try:
-        raw = json.loads(text)
-    except ValueError as exc:
-        raise AudioError("Could not parse svcl output: %s" % exc)
-    out = []
-    for e in raw:
-        if (e.get("Type") or "").strip() != "Device":
-            continue
-        d = _parse_entry(e)
-        if d["direction"] not in ("render", "capture") or not d["id"]:
-            continue
-        if not include_inactive and d["state"] and d["state"].lower() != "active":
-            continue
-        out.append(d)
-    return out
-
-
-def _svcl_set_default(item_id, role="all"):
-    proc = _run_svcl(["/SetDefault", item_id, role])
-    return proc.returncode == 0
-
-
-# --------------------------------------------------------------------------- #
-# pycaw backend — the default, and the only backend shipped in the release (guarded /
-# feature-detected). Used unless the user supplied an optional svcl.exe.
+# pycaw backend — the only backend (guarded / feature-detected)
 # --------------------------------------------------------------------------- #
 def _pycaw_ready():
     try:
@@ -225,7 +72,7 @@ def _pycaw_devices(include_inactive=False):
                 "friendly": friendly,
                 "direction": direction,
                 "is_default": dev_id in default_ids,
-                "is_default_comm": False,
+                "is_default_comm": False,  # pycaw can't read the communications default
                 "state": "Active",
                 "cmd_id": "",
             })
@@ -245,17 +92,15 @@ def _pycaw_set_default(item_id, role="all"):
         return True
     except Exception as exc:
         # A pycaw exception is a definite failure — raise (don't return False) so callers
-        # classify it as a hard failure, matching how the svcl path signals failure.
+        # classify it as a hard failure rather than an unverified success.
         raise AudioError("pycaw could not set the default device: %s" % exc)
 
 
 # --------------------------------------------------------------------------- #
-# Public API — a user-supplied svcl.exe wins if present; otherwise pycaw, the shipped default
+# Public API
 # --------------------------------------------------------------------------- #
 def get_devices(include_inactive=False):
     """Return all render+capture endpoint devices (one backend call)."""
-    if svcl_available():
-        return _svcl_devices(include_inactive)
     if _pycaw_ready():
         # pycaw warns (to stderr) when an endpoint's properties raise a COMError — seen
         # with some JBL / virtual-audio devices. Flow treats ANY stderr as fatal, so
@@ -263,18 +108,16 @@ def get_devices(include_inactive=False):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return _pycaw_devices(include_inactive)
-    raise AudioBackendUnavailable("pycaw backend unavailable (and no optional svcl.exe found)")
+    raise AudioBackendUnavailable("pycaw backend unavailable")
 
 
 def set_default(item_id, role="all"):
     """Set the default device (role 'all' = Console+Multimedia+Communications)."""
-    if svcl_available():
-        return _svcl_set_default(item_id, role)
     if _pycaw_ready():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return _pycaw_set_default(item_id, role)
-    raise AudioBackendUnavailable("pycaw backend unavailable (and no optional svcl.exe found)")
+    raise AudioBackendUnavailable("pycaw backend unavailable")
 
 
 def split_by_direction(devices):

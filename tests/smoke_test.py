@@ -1,7 +1,7 @@
-"""Offline smoke tests for AudioCowboy — no Flow Launcher or svcl.exe required.
+"""Offline smoke tests for AudioCowboy — no Flow Launcher or real audio required.
 
-Exercises: profiles CRUD round-trip, svcl JSON parsing/helpers, and the JSON-RPC
-wire layer (main.py invoked as a subprocess, the way Flow invokes it).
+Exercises: profiles CRUD round-trip, device helpers, and the JSON-RPC wire layer
+(main.py invoked as a subprocess, the way Flow invokes it).
 
     python tests/smoke_test.py
 """
@@ -79,29 +79,19 @@ def test_corruption_backup():
 def test_audio_helpers():
     import audio
     importlib.reload(audio)
-    e = {
-        "Name": "Speakers", "Device Name": "Realtek High Definition Audio",
-        "Type": "Device", "Direction": "Render",
-        "Default": "Render", "Default Multimedia": "Render", "Default Communications": "",
-        "Item ID": "{0.0.0.00000000}.{guid}",
-        "Command-Line Friendly ID": "Realtek\\Device\\Speakers\\Render",
-        "Device State": "Active",
-    }
-    d = audio._parse_entry(e)
-    assert d["id"] == "{0.0.0.00000000}.{guid}"
-    assert d["direction"] == "render"
-    assert d["is_default"] is True
-    assert d["friendly"] == "Speakers (Realtek High Definition Audio)"
-
+    spk = {"id": "{0.0.0.00000000}.{guid}", "direction": "render", "is_default": True,
+           "friendly": "Speakers (Realtek)", "state": "Active", "name": "Speakers",
+           "device_name": "Realtek", "is_default_comm": False, "cmd_id": ""}
     mic = {"id": "a", "direction": "capture", "is_default": True, "friendly": "Mic",
            "state": "Active", "name": "Mic", "device_name": "", "is_default_comm": False, "cmd_id": ""}
-    devs = [d, mic]
+    devs = [spk, mic]
     render, capture = audio.split_by_direction(devs)
     assert len(render) == 1 and len(capture) == 1
+    assert audio.find_default(devs, "render")["friendly"] == "Speakers (Realtek)"
     assert audio.find_default(devs, "capture")["friendly"] == "Mic"
     assert audio.find_by_id(devs, "a")["direction"] == "capture"
     assert audio.find_by_id(devs, "missing") is None
-    print("OK  audio parsing + helpers")
+    print("OK  audio helpers")
 
 
 def test_pycaw_warning_suppressed():
@@ -115,7 +105,6 @@ def test_pycaw_warning_suppressed():
         warnings.warn("COMError attempting to get property 67", UserWarning)
         return []
 
-    audio.svcl_available = lambda: False      # force the pycaw branch
     audio._pycaw_ready = lambda: True
     audio._pycaw_devices = _warn_then_return
 

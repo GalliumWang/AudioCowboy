@@ -102,7 +102,6 @@ class AudioCowboy(object):
 
         self._emitted = False  # guard: at most one JSON object on stdout
         self.settings = req.get("settings") or {}
-        audio.configure(svcl_path=self.settings.get("svcl_path"))
         self.include_inactive = bool(self.settings.get("show_disconnected", False))
 
         method = req.get("method", "query")
@@ -339,7 +338,7 @@ class AudioCowboy(object):
 
     def _backend_missing_toast(self):
         # Reached only when *neither* backend loaded. The release ships pycaw, so the
-        # real cause is a broken/absent lib/ — never "svcl.exe is missing".
+        # real cause is a broken/absent lib/ (pycaw failed to load).
         self.show_msg("Audio backend unavailable",
                       "Could not load the bundled pycaw backend. Try reinstalling the plugin.",
                       _abs(ICON_ERROR))
@@ -391,7 +390,7 @@ class AudioCowboy(object):
         a few times before concluding it didn't take. The success case returns on the
         first read.
         """
-        if comm and not audio.svcl_available():
+        if comm:
             return None  # pycaw can't report the communications default; say so, don't guess
         for attempt in range(retries):
             try:

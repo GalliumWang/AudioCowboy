@@ -5,13 +5,7 @@ body:
         AudioCowboy — quickly switch the default audio output/input device and manage
         device profiles. Open the menu by typing the action keyword (default: ac).
         Works out of the box with the bundled pure-Python backend — no external tools
-        needed. (A NirSoft svcl.exe backend is used automatically only if you add one.)
-  - type: input
-    attributes:
-      name: svcl_path
-      label: Path to svcl.exe (optional)
-      description: Optional. Leave empty for the default pure-Python backend. Set this only if you want to use a NirSoft svcl.exe kept elsewhere.
-      defaultValue: ""
+        needed.
   - type: checkbox
     attributes:
       name: show_disconnected

@@ -13,19 +13,15 @@ is **vendored third-party deps** (pycaw, comtypes, psutil), not to be edited.
 ## Commands
 
 ```bash
-# Offline test suite — runs cross-platform (no Flow, no svcl.exe, no real audio):
-python tests/smoke_test.py        # profiles CRUD, svcl JSON parsing, JSON-RPC wire layer
+# Offline test suite — runs cross-platform (no Flow, no real audio):
+python tests/smoke_test.py        # profiles CRUD, device helpers, JSON-RPC wire layer
 
 # Live checks — Windows only, against real devices:
 python tests/inspect_live.py      # read-only: dumps the menus + device lists
 python tests/inspect_actions.py   # save/load/delete in a temp APPDATA (switch is a no-op)
-python tests/diag_default.py      # compares plugin is_default detection vs raw svcl
 
 # Vendor the runtime deps the way CI/release does (needed to run the pycaw backend locally):
 pip install -r requirements.txt -t ./lib
-
-# Add the optional svcl.exe backend (Windows, downloads from NirSoft):
-powershell -File setup.ps1
 ```
 
 There is no single-test runner; `smoke_test.py` calls its `test_*` functions directly in
@@ -74,14 +70,11 @@ Three first-party modules with a clean split:
   action handlers. `result()`/`drill()` build Flow result items; `_emit()`/`_flow()` are
   the one-payload stdout writers. Prepends the plugin dir and `lib/` to `sys.path` so
   imports work regardless of Flow's CWD.
-- **`audio.py`** — backend abstraction with a **two-backend strategy**: the pure-Python
-  **pycaw** backend (vendored into `lib/`) is the default and the only one ever shipped —
-  feature-detected via `hasattr(AudioUtilities, "SetDefaultDevice")`, requires pycaw ≥
-  20251023. An **optional** user-supplied NirSoft `svcl.exe` overrides it when found
-  (checked: `svcl_path` setting → `bin/svcl.exe` → plugin dir → `PATH`). Both produce
-  the same normalized device dicts and the same MMDevice endpoint IDs. Errors are
-  `AudioError` / `AudioBackendUnavailable`. svcl results are memoized per process via
-  `_SVCL_CACHE`; `configure()` invalidates it.
+- **`audio.py`** — the audio backend: the pure-Python **pycaw** backend (vendored into
+  `lib/`) is the only backend — feature-detected via `hasattr(AudioUtilities,
+  "SetDefaultDevice")`, requires pycaw ≥ 20251023. It produces normalized device dicts
+  keyed on the MMDevice endpoint ID. Errors are `AudioError` / `AudioBackendUnavailable`.
+  There is **no external binary** — the plugin never bundles or downloads one.
 - **`profiles.py`** — `profiles.json` CRUD. Storage lives **outside the plugin folder**
   (`%APPDATA%\FlowLauncher\Settings\Plugins\AudioCowboy\`) because Flow wipes the install
   dir on every update. Writes are atomic (temp file + `os.replace`); corrupt/invalid JSON
@@ -92,11 +85,11 @@ Three first-party modules with a clean split:
 - **Device identity is the MMDevice endpoint ID** (e.g. `{0.0.0.00000000}.{guid}`), never
   the friendly name — stable across reboots and unique even for two identical headsets.
   Profiles persist the id; friendly names are display-only labels.
-- **svcl exit codes are unreliable.** After any `set_default`, the code re-reads the
+- **A backend "success" is not proof.** After any `set_default`, the code re-reads the
   device list to *verify* the default actually changed (`_is_now_default`, and the retry
-  loop in `load_profile`), retrying a few times because the change can lag the process
-  exit. Verified state — not the return code — is the source of truth. Outcomes are
-  reported honestly as applied / unverified / failed / absent.
+  loop in `load_profile`), retrying a few times because Windows can apply the change just
+  after the call returns. Verified state — not the return value — is the source of truth.
+  Outcomes are reported honestly as applied / unverified / failed / absent.
 - "Set default" means **all three roles** (Console + Multimedia + Communications) so
   Teams/Discord/Zoom follow; `role="2"` / comm-only is a separate context-menu action.
   The pycaw backend cannot read the *communications* default, so comm verification
@@ -114,8 +107,8 @@ binary; vendoring on Linux would package the wrong build). It re-vendors `lib/` 
 - **To ship an update**: bump `Version` in `plugin.json`, commit, push to `main`. The
   manifest auto-updater (~every 3h) picks up the higher version. First-ever listing needs
   one manual PR to `Flow.Launcher.PluginsManifest` — see `publish/PUBLISHING.md`.
-- `bin/svcl.exe` and `lib/` are git-ignored; the release rebuilds `lib/`, and the store
-  build ships **without** svcl.exe (pycaw only).
+- `lib/` is git-ignored; the release rebuilds it. The plugin is pure-Python (pycaw only),
+  with no external binary bundled or downloaded.
 - The repo is **`True347/AudioCowboy`** (not the conventional `Flow.Launcher.Plugin.*`
   name). All GitHub/jsdelivr URLs in `plugin.json`, `publish/*.json`, and `README.md`
   point at it; only the release **zip asset** keeps the conventional name

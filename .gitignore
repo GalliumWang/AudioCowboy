@@ -1,7 +1,3 @@
-# Optional NirSoft binary (user-added via setup.ps1; never shipped in the repo or the release zip)
-bin/svcl.exe
-bin/*.exe
-
 # Vendored runtime deps (rebuilt by CI; required in the release zip)
 lib/
 

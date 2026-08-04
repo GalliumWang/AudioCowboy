@@ -2,10 +2,10 @@
 
 > **STATUS: historical, pre-implementation research (written before v1.0.0).** It records the
 > options considered, not the final design — the shipped code supersedes it wherever they
-> disagree. In particular: **`svcl.exe` is never bundled.** The release zip ships the
-> pure-Python **pycaw** backend only; `svcl.exe` is a purely optional extra the user can add
-> themselves (`setup.ps1`), and when present it is used *in preference to* pycaw rather than
-> as a fallback after it. See `README.md` and `audio.py` for what actually shipped.
+> disagree. In particular, the `svcl.exe` backend discussed throughout this document was
+> **removed entirely in v1.0.4**: the plugin is pure-Python (**pycaw**) only, with no
+> external binary ever bundled or downloaded. Ignore every `svcl.exe` reference below —
+> see `README.md` and `audio.py` for what actually shipped.
 
 > A consolidated, implementation-ready research report for building **AudioCowboy**, a Flow Launcher plugin that switches the default audio input/output device and supports named profiles. Synthesized from five research streams and three adversarial fact-check verdicts. Where a verdict conflicts with a researcher, the verdict is treated as authoritative.
 

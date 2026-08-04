@@ -22,10 +22,8 @@ to drill down a level while keeping the window open. One keyword (`ac`), several
 sub-commands.
 
 There is no public Windows API to *set* the default device — every tool wraps the
-undocumented `IPolicyConfig` COM interface. AudioCowboy uses **`pycaw`** (pure Python)
-as its default backend, so the released plugin needs **no external executable**. If a
-NirSoft **`svcl.exe`** is present (in `bin\` or on `PATH`), it's used instead. No admin
-rights are required either way.
+undocumented `IPolicyConfig` COM interface. AudioCowboy uses **`pycaw`** (pure Python),
+so the plugin needs **no external executable** and no admin rights.
 
 Profiles store each device by its **MMDevice endpoint ID** (stable across reboots and
 unique even for two identical headsets), not by name — so a profile re-selects the
@@ -48,8 +46,6 @@ no setup step. Restart Flow (or reload plugins) and type `ac`.
 **Manual / from source** (developers): copy the folder into
 `%APPDATA%\FlowLauncher\Plugins\AudioCowboy\`, then vendor the backend with
 `pip install -r requirements.txt -t lib`. Restart Flow.
-Optional: `powershell -File setup.ps1` adds `bin\svcl.exe`, which is used in preference
-to pycaw when present.
 
 ---
 
@@ -98,7 +94,6 @@ Writes are atomic (temp file + `os.replace`), so a crash mid-write can't corrupt
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `svcl_path` | *(empty)* | Path to an optional `svcl.exe`. Empty = auto-detect: `bin\svcl.exe`, then the plugin folder, then `PATH`. If none is found, the bundled pycaw backend is used. |
 | `show_disconnected` | off | Also list unplugged / disabled endpoints. |
 
 ---
@@ -107,21 +102,16 @@ Writes are atomic (temp file + `os.replace`), so a crash mid-write can't corrupt
 
 - **"⚠ Audio backend unavailable"** — the bundled pycaw backend (in `lib/`) failed to load;
   reinstall the plugin. Running from source? Vendor it with `pip install -r requirements.txt -t lib`.
-- **Antivirus flags `svcl.exe`** — it's a NirSoft false positive; allow it, or just don't install
-  it (it's optional — the release doesn't ship it).
 - **A device won't switch** — make sure it's *Active* (plugged in / enabled) in Windows Sound settings.
 - **Nothing happens / errors** — check Flow's logs at `%APPDATA%\FlowLauncher\Logs\`.
 
 ---
 
-## Backends
+## Backend
 
-| Backend | When used | Notes |
-|---|---|---|
-| **pycaw** (default) | always, unless svcl.exe is present | [`pycaw`](https://github.com/AndreMiras/pycaw) `>= 20251023` (added `SetDefaultDevice`) + `comtypes`. Pure Python — vendored into `lib/`. This is what ships in the release. |
-| **svcl.exe** (optional) | if `bin\svcl.exe` exists or it's on `PATH`, or `svcl_path` is set | NirSoft SoundVolumeCommandLine. Add it manually, or run `setup.ps1` from the source repo (it isn't in the release zip). Not redistributed (AV false positives). |
-
-Both produce the same MMDevice endpoint IDs, so profiles are interchangeable between them.
+**pycaw** ([`pycaw`](https://github.com/AndreMiras/pycaw) `>= 20251023`, which added
+`SetDefaultDevice`, plus `comtypes`) — pure Python, vendored into `lib/`. It's the only
+backend, needs no external executable, and is what ships in the release.
 
 To publish to the Flow plugin store, see [publish/PUBLISHING.md](publish/PUBLISHING.md).
 
@@ -132,17 +122,16 @@ To publish to the Flow plugin store, see [publish/PUBLISHING.md](publish/PUBLISH
 ```
 plugin.json          # manifest (keyword: ac, Language: python)
 main.py              # JSON-RPC entry + router + actions
-audio.py             # pycaw backend (+ optional svcl.exe backend)
+audio.py             # pycaw backend
 profiles.py          # profiles.json CRUD (atomic, update-safe path)
 SettingsTemplate.yaml
-setup.ps1            # downloads the optional bin/svcl.exe (not shipped in the release)
 Images/              # icon set
 tools/gen_icons.py   # regenerate icons (Pillow)
 tests/               # smoke_test.py (offline) + inspect_live.py / inspect_actions.py
 docs/RESEARCH.md     # design + feasibility research report
 ```
 
-Run the offline tests (no Flow / svcl needed):
+Run the offline tests (no Flow needed):
 
 ```powershell
 python tests\smoke_test.py
@@ -168,7 +157,6 @@ require the newer `Python_v2` protocol.)
 
 ## Credits
 
-- [pycaw](https://github.com/AndreMiras/pycaw) — the pure-Python Core Audio backend that ships with the plugin.
-- [NirSoft SoundVolumeView / svcl](https://www.nirsoft.net/utils/sound_volume_command_line.html) — optional alternative backend.
+- [pycaw](https://github.com/AndreMiras/pycaw) — the pure-Python Core Audio backend that powers the plugin.
 - [Flow Launcher](https://github.com/Flow-Launcher/Flow.Launcher) — the launcher and plugin API.
 - Inspired by [SoundSwitch](https://github.com/Belphemur/SoundSwitch) and rofi audio-menu workflows.

@@ -10,8 +10,8 @@ One **manual PR** for the first listing, then **automatic updates** forever.
 ## 0. Prerequisites
 - A GitHub account.
 - `git` (installed) and optionally `gh` (`gh auth login` to use the CLI shortcuts).
-- The store build uses the **pycaw** backend — no `svcl.exe` is shipped. `bin/svcl.exe`
-  and `lib/` are git-ignored; CI rebuilds `lib/` from `requirements.txt`.
+- The plugin uses the pure-Python **pycaw** backend — no external binary. `lib/` is
+  git-ignored; CI rebuilds it from `requirements.txt`.
 
 ## 1. Create the GitHub repo and push
 ```powershell
@@ -36,7 +36,7 @@ Pushing to `main` triggers the **Publish Release** workflow (`.github/workflows/
 
 ## 3. Smoke-test the real artifact on a clean profile (recommended)
 In Flow: `pm install https://github.com/True347/AudioCowboy/releases/download/v1.0.0/Flow.Launcher.Plugin.AudioCowboy.zip`
-Restart Flow, type `ac`, confirm switching works **without** svcl.exe present.
+Restart Flow, type `ac`, confirm switching works.
 
 ## 4. Submit the manifest PR (first time only)
 1. Fork **https://github.com/Flow-Launcher/Flow.Launcher.PluginsManifest** and branch off
