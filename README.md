@@ -7,7 +7,9 @@ ac            →  🔊 Output   🎤 Input   📁 Profiles   💾 Save
 ac o [filter] →  pick the default output (playback) device
 ac i [filter] →  pick the default input  (recording) device
 ac s <name>   →  save the current input+output as a named profile
-ac p [filter] →  list profiles → Enter applies; right-click → Apply / Delete
+ac p [filter] →  list profiles → Enter applies; right-click → Apply / Rename / Delete
+ac r [filter] →  rename a profile (pick one, then type the new name)
+ac d [filter] →  delete profiles (Enter removes; the list stays open)
 ```
 
 Switching sets **all three audio roles** (Console + Multimedia + Communications), so apps like Teams / Discord / Zoom follow the change too.
@@ -58,7 +60,9 @@ no setup step. Restart Flow (or reload plugins) and type `ac`.
 | `ac o hdmi` | Same, filtered to devices whose name contains "hdmi". |
 | `ac i` | List active **input** devices; Enter sets the default. |
 | `ac s Gaming` | Save the current output+input devices as a profile named "Gaming" (overwrites if it exists). |
-| `ac p` | List saved profiles. Enter applies a profile; **Shift+Enter** opens its context menu (Apply / Delete). A `⚠` marks a profile whose device is currently unplugged. |
+| `ac p` | List saved profiles. Enter applies a profile; **Shift+Enter** opens its context menu (Apply / Rename / Delete). A `⚠` marks a profile whose device is currently unplugged. The list also offers **Rename** and **Delete** entries. |
+| `ac r` | Pick a profile, then type a new name (`Gaming → Streaming`) and press Enter. Renaming onto a name already in use is refused. |
+| `ac d` | List profiles; Enter deletes the highlighted one. The list stays open so you can remove several in a row. |
 
 On a device, **Shift+Enter** offers *Set for all roles* and *Set as Communication device only*.
 

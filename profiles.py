@@ -153,6 +153,35 @@ def delete_profile(name):
     return removed
 
 
+def rename_profile(old, new):
+    """Rename profile ``old`` to ``new``. Returns 'renamed', 'not_found', or 'exists'.
+
+    Rejects (returns 'exists') if ``new`` collides with a *different* profile — unlike
+    save_profile's overwrite, a rename must never silently destroy another profile.
+    A case-only rename (e.g. "gaming" -> "Gaming") is allowed. Preserves ``created``.
+    """
+    new = (new or "").strip()
+    if not new:
+        raise ValueError("New profile name cannot be empty")
+    old_l = (old or "").strip().lower()
+    new_l = new.lower()
+    data = load()
+    target = None
+    for p in data["profiles"]:
+        if (p.get("name") or "").strip().lower() == old_l:
+            target = p
+            break
+    if target is None:
+        return "not_found"
+    for p in data["profiles"]:
+        if p is not target and (p.get("name") or "").strip().lower() == new_l:
+            return "exists"
+    target["name"] = new
+    target["updated"] = _now_iso()
+    _save(data)
+    return "renamed"
+
+
 def _device_record(device):
     if not device:
         return None

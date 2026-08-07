@@ -50,6 +50,45 @@ def test_profiles():
     print("OK  profiles CRUD")
 
 
+def test_rename():
+    tmp = tempfile.mkdtemp()
+    os.environ["APPDATA"] = tmp
+    os.makedirs(os.path.join(tmp, "FlowLauncher"))
+    import profiles
+    importlib.reload(profiles)
+
+    profiles.save_profile("Gaming", output={"id": "O", "friendly": "Spk"}, input=None)
+    profiles.save_profile("Music", output={"id": "O2", "friendly": "Spk2"}, input=None)
+    created = profiles.get_profile("Gaming")["created"]
+
+    # rename to a fresh name: preserves created, adds updated, keeps device data
+    assert profiles.rename_profile("Gaming", "Streaming") == "renamed"
+    assert profiles.get_profile("Gaming") is None
+    r = profiles.get_profile("Streaming")
+    assert r and r["created"] == created and "updated" in r
+    assert r["output"]["endpointId"] == "O"
+
+    # collision with a DIFFERENT profile is rejected (no data loss on either side)
+    assert profiles.rename_profile("Streaming", "Music") == "exists"
+    assert profiles.get_profile("Streaming") is not None
+    assert profiles.get_profile("Music")["output"]["endpointId"] == "O2"
+
+    # case-only rename is allowed (not a self-collision)
+    assert profiles.rename_profile("music", "MUSIC") == "renamed"
+    assert profiles.get_profile("MUSIC")["name"] == "MUSIC"
+
+    assert profiles.rename_profile("nope", "whatever") == "not_found"
+
+    try:
+        profiles.rename_profile("MUSIC", "   ")
+        assert False, "empty new name should raise"
+    except ValueError:
+        pass
+
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("OK  profile rename (collision-safe)")
+
+
 def test_corruption_backup():
     tmp = tempfile.mkdtemp()
     os.environ["APPDATA"] = tmp
@@ -125,6 +164,11 @@ def run_main(req):
 
 
 def test_wire():
+    # Own APPDATA so the subprocess doesn't inherit a deleted temp dir from a prior test.
+    tmp = tempfile.mkdtemp()
+    os.environ["APPDATA"] = tmp
+    os.makedirs(os.path.join(tmp, "FlowLauncher"))
+
     out, err = run_main({"method": "query", "parameters": [""], "settings": {}})
     assert err.strip() == "", "stderr not empty:\n" + err
     obj = json.loads(out)
@@ -136,12 +180,14 @@ def test_wire():
         assert err_q.strip() == "", "stderr for %r:\n%s" % (q, err_q)
         json.loads(out_q)
 
-    # profile context menu -> Apply + Delete
-    out_c, _ = run_main({"method": "context_menu", "parameters": [["profile", "Gaming"]], "settings": {}})
+    # profile context menu -> Apply + Rename (drill) + Delete
+    out_c, err_c = run_main({"method": "context_menu", "parameters": [["profile", "Gaming"]], "settings": {}})
+    assert err_c.strip() == "", err_c
     objc = json.loads(out_c)
-    assert len(objc["result"]) == 2
+    assert len(objc["result"]) == 3
     assert objc["result"][0]["JsonRPCAction"]["method"] == "load_profile"
-    assert objc["result"][1]["JsonRPCAction"]["method"] == "delete_profile"
+    assert objc["result"][1]["JsonRPCAction"]["method"] == "Flow.Launcher.ChangeQuery"
+    assert objc["result"][2]["JsonRPCAction"]["method"] == "delete_profile"
 
     # device context menu -> all roles + comms only
     out_d, _ = run_main({"method": "context_menu",
@@ -166,13 +212,91 @@ def test_wire():
     out_u, err_u = run_main({"method": "bogus", "parameters": [], "settings": {}})
     assert err_u.strip() == ""
     assert json.loads(out_u) == {"result": []}
+    shutil.rmtree(tmp, ignore_errors=True)
     print("OK  JSON-RPC wire layer (%d drill items in top menu)" % len(drill_items))
+
+
+def test_delete_rename_wire():
+    tmp = tempfile.mkdtemp()
+    os.environ["APPDATA"] = tmp
+    os.makedirs(os.path.join(tmp, "FlowLauncher"))
+    import profiles
+    importlib.reload(profiles)
+    profiles.save_profile("Gaming", output={"id": "O", "friendly": "Spk"}, input=None)
+    sep = " → "
+
+    # delete list: Enter removes via delete_profile_relist and keeps the window open
+    out, err = run_main({"method": "query", "parameters": ["d"], "settings": {}})
+    assert err.strip() == "", err
+    res = json.loads(out)["result"]
+    ditem = [r for r in res if r.get("JsonRPCAction", {}).get("method") == "delete_profile_relist"]
+    assert ditem and ditem[0]["JsonRPCAction"]["parameters"] == ["Gaming"]
+    assert ditem[0]["JsonRPCAction"].get("DontHideAfterAction") is True
+
+    # rename stage 1: picking a profile drills the box to "ac r Gaming → "
+    out, err = run_main({"method": "query", "parameters": ["r"], "settings": {}})
+    assert err.strip() == "", err
+    res = json.loads(out)["result"]
+    target = "%s r Gaming%s" % ("ac", sep)
+    assert any(r.get("JsonRPCAction", {}).get("parameters", [None])[0] == target
+               for r in res), [r.get("JsonRPCAction") for r in res]
+
+    # rename stage 2: typing a new name yields a rename_profile confirm (Old, New)
+    out, _ = run_main({"method": "query", "parameters": ["r Gaming%sStreaming" % sep], "settings": {}})
+    conf = [r for r in json.loads(out)["result"]
+            if r.get("JsonRPCAction", {}).get("method") == "rename_profile"]
+    assert conf and conf[0]["JsonRPCAction"]["parameters"] == ["Gaming", "Streaming"]
+
+    # rename onto an existing DIFFERENT profile is a warning, never an actionable rename
+    profiles.save_profile("Music", output={"id": "O2", "friendly": "S2"}, input=None)
+    out, _ = run_main({"method": "query", "parameters": ["r Gaming%sMusic" % sep], "settings": {}})
+    assert not [r for r in json.loads(out)["result"]
+                if r.get("JsonRPCAction", {}).get("method") == "rename_profile"]
+
+    def _rename_action(rest):
+        return [r for r in json.loads(
+            run_main({"method": "query", "parameters": ["r " + rest], "settings": {}})[0])["result"]
+            if r.get("JsonRPCAction", {}).get("method") == "rename_profile"]
+
+    # just-drilled state "Gaming → " (query() strips the trailing space): must show the
+    # "type the new name" prompt, NOT "No matching profiles", and offer no rename yet.
+    out, _ = run_main({"method": "query", "parameters": ["r Gaming%s" % sep], "settings": {}})
+    res = json.loads(out)["result"]
+    assert any(r.get("SubTitle") == "Type the new name" for r in res), res
+    assert not [r for r in res if r.get("JsonRPCAction", {}).get("method") == "rename_profile"]
+
+    # a case-only rename is a legitimate rename (backend allows it), so the UI offers it
+    case_act = _rename_action("Gaming" + sep + "GAMING")
+    assert case_act and case_act[0]["JsonRPCAction"]["parameters"] == ["Gaming", "GAMING"], case_act
+
+    # arrow-in-name: with "Foo" and "Foo → Bar", renaming the latter must target the LONGER
+    # name (not mis-split to old="Foo"). Longest-known-name-first guarantees this.
+    profiles.save_profile("Foo", output={"id": "F", "friendly": "F"}, input=None)
+    profiles.save_profile("Foo → Bar", output={"id": "FB", "friendly": "FB"}, input=None)
+    act = _rename_action("Foo%sBar%sBaz" % (sep, sep))  # "Foo → Bar → Baz"
+    assert act and act[0]["JsonRPCAction"]["parameters"] == ["Foo → Bar", "Baz"], act
+
+    # the action methods themselves emit exactly ONE follow-up payload, stderr clean
+    out, err = run_main({"method": "delete_profile_relist", "parameters": ["Music"], "settings": {}})
+    assert err.strip() == "", err
+    assert json.loads(out) == {"method": "Flow.Launcher.ChangeQuery", "parameters": ["ac d ", True]}
+    out, err = run_main({"method": "rename_profile", "parameters": ["Foo", "Renamed"], "settings": {}})
+    assert err.strip() == "", err
+    assert json.loads(out) == {"method": "Flow.Launcher.ChangeQuery", "parameters": ["ac p ", True]}
+    # a colliding rename action emits a single ShowMsg (not a ChangeQuery, not a crash)
+    out, err = run_main({"method": "rename_profile", "parameters": ["Renamed", "Gaming"], "settings": {}})
+    assert err.strip() == "" and json.loads(out)["method"] == "Flow.Launcher.ShowMsg"
+
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("OK  delete + rename wire (parsing + one-payload actions)")
 
 
 if __name__ == "__main__":
     test_profiles()
+    test_rename()
     test_corruption_backup()
     test_audio_helpers()
     test_pycaw_warning_suppressed()
     test_wire()
+    test_delete_rename_wire()
     print("\nALL PASS")

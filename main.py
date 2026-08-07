@@ -46,6 +46,9 @@ except Exception:
 
 KEYWORD = "ac"  # must match plugin.json "ActionKeyword"
 
+# Rename drill encodes "Old → New" in the query box; the arrow is the delimiter we split on.
+_RENAME_SEP = " → "
+
 ICON = "Images/app.png"
 ICON_OUT = "Images/output.png"
 ICON_IN = "Images/input.png"
@@ -159,6 +162,10 @@ class AudioCowboy(object):
             return self._save_menu(rest)
         if head in ("p", "profile", "profiles", "l", "load"):
             return self._profile_menu(rest)
+        if head in ("d", "del", "delete"):
+            return self._delete_menu(rest)
+        if head in ("r", "ren", "rename"):
+            return self._rename_menu(rest)
         return self._top_menu()
 
     def context_menu(self, data=None):
@@ -171,6 +178,8 @@ class AudioCowboy(object):
                 result("Apply profile “%s”" % name,
                        "Set both devices (all roles)", ICON_PROFILE,
                        method="load_profile", params=[name]),
+                drill("Rename profile “%s”…" % name, "Give it a new name",
+                      "r " + name + _RENAME_SEP, ICON_PROFILE),
                 result("Delete profile “%s”" % name,
                        "Remove this profile permanently", ICON_DELETE,
                        method="delete_profile", params=[name]),
@@ -300,6 +309,11 @@ class AudioCowboy(object):
                                 ICON_PROFILE))
             return items
 
+        items.append(drill("✏️  Rename a profile…", "Give a profile a new name",
+                           "r ", ICON_PROFILE, score=-10))
+        items.append(drill("\U0001F5D1  Delete a profile…", "Remove a saved profile",
+                           "d ", ICON_DELETE, score=-20))
+
         current_ids = set()
         try:
             current_ids = {d["id"] for d in audio.get_devices(include_inactive=True)}
@@ -324,6 +338,90 @@ class AudioCowboy(object):
             items.append(result("\U0001F4C1  " + pname, sub, ICON_PROFILE,
                                 method="load_profile", params=[pname],
                                 context=["profile", pname]))
+        if matched == 0:
+            items.append(result("No matching profiles", "Try a different filter", ICON_WARN))
+        return items
+
+    def _delete_menu(self, filt):
+        profs = profiles.list_profiles()
+        filt_l = (filt or "").strip().lower()
+        items = [drill("← Back", "Return to profiles", "p ", ICON_BACK, score=-100)]
+        if not profs:
+            items.append(result("No profiles to delete",
+                                "Use “ac s <name>” to save one first", ICON_PROFILE))
+            return items
+        matched = 0
+        for p in profs:
+            pname = p.get("name", "")
+            if filt_l and filt_l not in pname.lower():
+                continue
+            matched += 1
+            out = p.get("output") or {}
+            inp = p.get("input") or {}
+            sub = "Out: %s   |   In: %s   ·   Enter to delete permanently" % (
+                out.get("friendlyName") or "?", inp.get("friendlyName") or "?")
+            # Stay open and re-list after deleting (delete_profile_relist), so several can
+            # be removed in a row; the refreshed list is the confirmation.
+            items.append(result("\U0001F5D1  " + pname, sub, ICON_DELETE,
+                                method="delete_profile_relist", params=[pname],
+                                dont_hide=True))
+        if matched == 0:
+            items.append(result("No matching profiles", "Try a different filter", ICON_WARN))
+        return items
+
+    def _rename_menu(self, rest):
+        profs = profiles.list_profiles()
+        names = [p.get("name", "") for p in profs]
+        items = [drill("← Back", "Return to profiles", "p ", ICON_BACK, score=-100)]
+        if not profs:
+            items.append(result("No profiles to rename",
+                                "Use “ac s <name>” to save one first", ICON_PROFILE))
+            return items
+
+        # Detect "Old → New": match rest against a KNOWN name + separator so spaces (or
+        # even an arrow) in either name can't break the split — longest known name wins.
+        # query() strips the trailing space of _RENAME_SEP, so accept both the just-drilled
+        # state ("<name> →") and the typing state ("<name> → <new>").
+        # Accepted limit: if a profile literally named "X → Y" exists, renaming "X" *to* a
+        # name starting "Y …" produces a box identical to drilling into "X → Y", so it
+        # targets "X → Y". Non-destructive — the confirm shows the real Old → New before
+        # Enter, and the collision guard blocks any clobber — so it's documented, not fixed.
+        sep_core = _RENAME_SEP.rstrip()  # " →"
+        old = new = None
+        for cand in sorted(names, key=len, reverse=True):
+            if rest.startswith(cand + _RENAME_SEP):
+                old, new = cand, rest[len(cand + _RENAME_SEP):]
+                break
+            if rest == cand + sep_core:
+                old, new = cand, ""
+                break
+
+        if old is not None:
+            new = new.strip()
+            if not new:
+                items.append(result("Rename “%s” → …" % old, "Type the new name", ICON_PROFILE))
+            elif new == old:  # exact match only; a case change is a legitimate rename
+                items.append(result("Rename “%s”" % old,
+                                    "That's the same name — type a different one", ICON_WARN))
+            elif any(n.strip().lower() == new.lower() and n.lower() != old.lower()
+                     for n in names):
+                items.append(result("⚠ “%s” already exists" % new,
+                                    "Pick a name not used by another profile", ICON_WARN))
+            else:
+                items.append(result("Rename “%s” → “%s”" % (old, new), "Enter to rename",
+                                    ICON_PROFILE, method="rename_profile",
+                                    params=[old, new], dont_hide=True))
+            return items
+
+        # Stage 1: pick which profile to rename; `rest` acts as a name filter.
+        filt_l = rest.strip().lower()
+        matched = 0
+        for pname in names:
+            if filt_l and filt_l not in pname.lower():
+                continue
+            matched += 1
+            items.append(drill("✏️  " + pname, "Rename this profile",
+                               "r " + pname + _RENAME_SEP, ICON_PROFILE))
         if matched == 0:
             items.append(result("No matching profiles", "Try a different filter", ICON_WARN))
         return items
@@ -527,6 +625,32 @@ class AudioCowboy(object):
             self.show_msg("Profile deleted: %s" % name, "", _abs(ICON_DELETE))
         else:
             self.show_msg("Profile not found", name, _abs(ICON_WARN))
+
+    def delete_profile_relist(self, name):
+        # Delete, then re-open the delete list (window stays open via DontHideAfterAction)
+        # so the user can remove several in a row; the refreshed list is the confirmation.
+        # A no-op delete (already gone) still just re-lists — same visible outcome, so the
+        # bool is intentionally ignored. Only a raised exception is surfaced as a toast.
+        try:
+            profiles.delete_profile(name)
+        except Exception as exc:
+            self.show_msg("Failed to delete profile", str(exc), _abs(ICON_ERROR))
+            return
+        self._flow("Flow.Launcher.ChangeQuery", ["%s d " % KEYWORD, True])
+
+    def rename_profile(self, old, new):
+        try:
+            status = profiles.rename_profile(old, new)
+        except Exception as exc:
+            self.show_msg("Failed to rename profile", str(exc), _abs(ICON_ERROR))
+            return
+        if status == "renamed":
+            # Back to the profiles list, now showing the new name (that's the confirmation).
+            self._flow("Flow.Launcher.ChangeQuery", ["%s p " % KEYWORD, True])
+        elif status == "exists":
+            self.show_msg("Name already in use", new, _abs(ICON_WARN))
+        else:
+            self.show_msg("Profile not found", old, _abs(ICON_WARN))
 
 
 if __name__ == "__main__":
