@@ -12,3 +12,9 @@ body:
       label: Show disconnected / disabled devices
       description: When on, unplugged or disabled endpoints are listed too (you usually want this off).
       defaultValue: false
+  - type: checkbox
+    attributes:
+      name: boom3d_compatibility
+      label: Boom3D compatibility mode
+      description: When an output switch is accepted but Boom3D restores its active virtual output, show a request confirmation instead of a default-device warning. Physical routing is managed by Boom3D. Input and backend errors are still checked.
+      defaultValue: false
