@@ -120,9 +120,11 @@ default, so AudioCowboy cannot independently verify Boom's final physical output
 The menu's default checkmark and saved snapshots continue to reflect the Windows
 default (Boom's virtual device), rather than guessing the physical output.
 
-Use **v1.0.7 or later**: v1.0.6 did not load saved settings for Flow's V1 action
-requests, which omit the settings sent during queries. This could leave compatibility
-mode off when selecting a device even after enabling it in Flow's settings.
+Use **v1.0.8 or later**: v1.0.6 did not load saved settings for Flow's V1 action
+requests, and v1.0.7 looked in Flow's executable installation directory instead of
+its user-data directory. Both could leave compatibility mode off when selecting a
+device even after enabling it in Flow's settings. Saved settings now come from the
+user-data root containing the installed plugin, with the roaming directory as a fallback.
 
 ---
 
