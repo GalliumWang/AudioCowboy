@@ -213,6 +213,7 @@ class SavedSettingsTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = self.tmp.name
+        self.plugin_dir = os.path.join(self.root, "Plugins", "AudioCowboy-1.0.8")
 
     def write_settings(self, root, value, raw=False):
         path = os.path.join(root, "Settings", "Plugins", "AudioCowboy", "Settings.json")
@@ -220,27 +221,44 @@ class SavedSettingsTests(unittest.TestCase):
         with open(path, "w", encoding="utf-8-sig") as fh:
             fh.write(value if raw else json.dumps(value))
 
-    def test_flow_application_directory_takes_precedence(self):
+    def test_flow_installation_directory_is_not_the_settings_directory(self):
         expected = {"boom3d_compatibility": True, "show_disconnected": True}
         self.write_settings(self.root, expected)
-        with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root,
-                                     "APPDATA": os.path.join(self.root, "elsewhere")}, clear=True):
+        installation = os.path.join(self.root, "Local", "FlowLauncher")
+        self.write_settings(installation, {"boom3d_compatibility": False})
+        with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": installation}, clear=True), \
+                patch.object(main, "PLUGIN_DIR", self.plugin_dir):
             self.assertEqual(main._saved_settings(), expected)
 
     def test_portable_install_without_flow_environment(self):
         self.write_settings(self.root, {"boom3d_compatibility": True})
-        plugin_dir = os.path.join(self.root, "Plugins", "AudioCowboy-1.0.7")
-        with patch.dict(os.environ, {}, clear=True), patch.object(main, "PLUGIN_DIR", plugin_dir):
+        with patch.dict(os.environ, {}, clear=True), patch.object(main, "PLUGIN_DIR", self.plugin_dir):
+            self.assertTrue(main._saved_settings()["boom3d_compatibility"])
+
+    def test_portable_plugin_settings_take_priority_over_roaming(self):
+        self.write_settings(self.root, {"boom3d_compatibility": False})
+        appdata = os.path.join(self.root, "Roaming")
+        self.write_settings(os.path.join(appdata, "FlowLauncher"), {"boom3d_compatibility": True})
+        with patch.dict(os.environ, {"APPDATA": appdata}, clear=True), \
+                patch.object(main, "PLUGIN_DIR", self.plugin_dir):
+            self.assertFalse(main._saved_settings()["boom3d_compatibility"])
+
+    def test_preinstalled_plugin_can_fall_back_to_roaming_settings(self):
+        appdata = os.path.join(self.root, "Roaming")
+        self.write_settings(os.path.join(appdata, "FlowLauncher"), {"boom3d_compatibility": True})
+        with patch.dict(os.environ, {"APPDATA": appdata}, clear=True), \
+                patch.object(main, "PLUGIN_DIR", self.plugin_dir):
             self.assertTrue(main._saved_settings()["boom3d_compatibility"])
 
     def test_appdata_fallback_when_running_from_source(self):
         self.write_settings(os.path.join(self.root, "FlowLauncher"), {"boom3d_compatibility": True})
-        with patch.dict(os.environ, {"APPDATA": self.root}, clear=True), \
+        with patch.dict(os.environ, {"APPDATA": self.root,
+                                     "FLOW_APPLICATION_DIRECTORY": os.path.join(self.root, "Local")}, clear=True), \
                 patch.object(main, "PLUGIN_DIR", os.path.join(self.root, "source")):
             self.assertTrue(main._saved_settings()["boom3d_compatibility"])
 
     def test_missing_settings_do_not_create_files(self):
-        with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root}, clear=True):
+        with patch.dict(os.environ, {}, clear=True), patch.object(main, "PLUGIN_DIR", self.plugin_dir):
             self.assertEqual(main._saved_settings(), {})
         self.assertEqual(os.listdir(self.root), [])
 
@@ -253,13 +271,20 @@ class SavedSettingsTests(unittest.TestCase):
         for value in ("{broken", "[]", "null", "true"):
             with self.subTest(value=value):
                 self.write_settings(self.root, value, raw=True)
-                with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root}, clear=True):
+                with patch.dict(os.environ, {}, clear=True), patch.object(main, "PLUGIN_DIR", self.plugin_dir):
                     self.assertEqual(main._saved_settings(), {})
 
     def test_unreadable_settings_default_to_empty(self):
-        with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root}, clear=True), \
+        with patch.dict(os.environ, {}, clear=True), patch.object(main, "PLUGIN_DIR", self.plugin_dir), \
                 patch("builtins.open", side_effect=PermissionError("locked")):
             self.assertEqual(main._saved_settings(), {})
+
+    def test_settings_are_reread_for_each_action(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(main, "PLUGIN_DIR", self.plugin_dir):
+            self.write_settings(self.root, {"boom3d_compatibility": False})
+            self.assertFalse(main._saved_settings()["boom3d_compatibility"])
+            self.write_settings(self.root, {"boom3d_compatibility": True})
+            self.assertTrue(main._saved_settings()["boom3d_compatibility"])
 
 
 if __name__ == "__main__":
