@@ -106,6 +106,7 @@ class AudioCowboy(object):
         self._emitted = False  # guard: at most one JSON object on stdout
         self.settings = req.get("settings") or {}
         self.include_inactive = bool(self.settings.get("show_disconnected", False))
+        self.boom3d_compatibility = bool(self.settings.get("boom3d_compatibility", False))
 
         method = req.get("method", "query")
         params = req.get("parameters") or []
@@ -472,8 +473,14 @@ class AudioCowboy(object):
         if verified is True:
             self.show_msg("%s device set" % label, friendly or item_id, _abs(ok_icon))
         elif verified is False:
-            self.show_msg("%s device may not have changed" % label,
-                          friendly or item_id, _abs(ICON_WARN))
+            redirected = None if comm else self._boom3d_redirect(item_id, direction, ok)
+            if redirected:
+                self.show_msg("%s switch requested (Boom3D)" % label,
+                              "%s   |   Windows default: %s. Final output is managed by Boom3D."
+                              % (friendly or item_id, redirected), _abs(ok_icon))
+            else:
+                self.show_msg("%s device may not have changed" % label,
+                              friendly or item_id, _abs(ICON_WARN))
         elif ok:  # couldn't read back — don't claim a definitive success
             self.show_msg("%s device set (unverified)" % label,
                           friendly or item_id, _abs(ICON_WARN))
@@ -503,6 +510,32 @@ class AudioCowboy(object):
             if attempt < retries - 1:
                 time.sleep(0.15)
         return False
+
+    def _boom3d_redirect(self, item_id, direction, set_ok):
+        """Return Boom's default endpoint name for an accepted output request.
+
+        Boom3D can restore its virtual endpoint immediately after a successful set.
+        This proves only that the request was accepted and Boom is the default, not
+        which physical endpoint Boom is using. Keep that distinction in the toast.
+        Read active endpoints separately: include_inactive=True is insufficient to
+        establish that the requested physical output is still available.
+        """
+        if not self.boom3d_compatibility or direction != "render" or not set_ok:
+            return None
+        try:
+            devices = audio.get_devices(include_inactive=False)
+        except Exception:
+            return None
+        target = audio.find_by_id(devices, item_id)
+        current = audio.find_default(devices, "render")
+        if not target or target.get("direction") != "render" or not current:
+            return None
+        if current["id"] == item_id:
+            return None
+        friendly = current.get("friendly") or current.get("name") or ""
+        if any(name in friendly.casefold() for name in ("boom audio", "boom3d", "boom 3d")):
+            return friendly
+        return None
 
     def save_profile(self, name):
         try:
@@ -541,12 +574,14 @@ class AudioCowboy(object):
             self.show_msg("Profile “%s” is empty" % name, "Nothing to apply", _abs(ICON_WARN))
             return
 
-        # Set each device. Only a raised exception is a hard failure; the backend's own
-        # success value is ignored — verification (below) is the source of truth.
+        # Set each device. Verification (below) remains the source of truth for
+        # direct switches; Boom3D redirects also require an accepted backend call.
         set_error = set()
+        set_accepted = set()
         for endpoint_id, _direction, _label in targets:
             try:
-                audio.set_default(endpoint_id, "all")
+                if audio.set_default(endpoint_id, "all"):
+                    set_accepted.add(endpoint_id)
             except audio.AudioBackendUnavailable:
                 self._backend_missing_toast()
                 return
@@ -576,11 +611,12 @@ class AudioCowboy(object):
 
         # Classify each target honestly:
         #   applied    - confirmed default now
-        #   unverified - couldn't re-read; backend reported success
+        #   redirected - accepted output request while Boom is Windows' default
+        #   unverified - couldn't re-read; no hard backend error
         #   failed     - device present but did not become default (or the set failed)
         #   absent     - endpoint not present on the system
-        applied, unverified, failed, absent = [], [], [], []
-        for endpoint_id, _direction, label in targets:
+        applied, redirected, unverified, failed, absent = [], [], [], [], []
+        for endpoint_id, direction, label in targets:
             if devices is None:
                 # Can't verify: only a raised exception is a hard failure; an unreliable
                 # False return is genuinely unknown, so report it as unverified.
@@ -591,16 +627,20 @@ class AudioCowboy(object):
                 absent.append(label)
             elif dev["is_default"]:
                 applied.append(label)
+            elif self._boom3d_redirect(endpoint_id, direction,
+                                       endpoint_id in set_accepted and endpoint_id not in set_error):
+                redirected.append("%s (requested via Boom3D)" % label)
             else:
                 failed.append(label)
 
         problems = failed + absent
-        if (applied or unverified) and not problems:
-            shown = applied + ["%s (unverified)" % u for u in unverified]
-            self.show_msg("Applied profile: %s" % name, "   ".join(shown),
+        if (applied or redirected or unverified) and not problems:
+            shown = applied + redirected + ["%s (unverified)" % u for u in unverified]
+            title = "Profile requested (Boom3D): %s" if redirected else "Applied profile: %s"
+            self.show_msg(title % name, "   ".join(shown),
                           _abs(ICON_WARN if unverified else ICON_PROFILE))
-        elif applied or unverified:
-            shown = applied + ["%s (unverified)" % u for u in unverified]
+        elif applied or redirected or unverified:
+            shown = applied + redirected + ["%s (unverified)" % u for u in unverified]
             detail = "Set: %s" % ", ".join(shown)
             if failed:
                 detail += "   Failed to set: %s" % ", ".join(failed)
