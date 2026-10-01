@@ -1,5 +1,9 @@
 # AudioCowboy 🤠🔊
 
+This fork of [True347/AudioCowboy](https://github.com/True347/AudioCowboy) adds an
+optional **Boom3D compatibility mode**. Install the fork's release, then enable
+**Boom3D compatibility mode** in Flow Settings → Plugins → AudioCowboy.
+
 A [Flow Launcher](https://www.flowlauncher.com/) plugin to **quickly switch the default audio input/output device** and **save/load device profiles** — a rofi-style multi-layer menu under a single keyword.
 
 ```
@@ -35,12 +39,12 @@ right device even when friendly names collide.
 
 ## Install
 
-**From the Flow Launcher plugin store** (once listed): open Flow, type
-`pm install AudioCowboy`, or find it in Settings → Plugin Store.
+The Flow Launcher plugin store installs the **upstream** version of AudioCowboy.
+For this fork's Boom3D fix, install the fork release zip below.
 
 **From a release zip** (or to test before the store listing):
 ```
-pm install https://github.com/True347/AudioCowboy/releases/latest/download/Flow.Launcher.Plugin.AudioCowboy.zip
+pm install https://github.com/GalliumWang/AudioCowboy/releases/latest/download/Flow.Launcher.Plugin.AudioCowboy.zip
 ```
 The release zip bundles the pure-Python backend (`lib/`), so it works out of the box —
 no setup step. Restart Flow (or reload plugins) and type `ac`.
@@ -99,6 +103,22 @@ Writes are atomic (temp file + `os.replace`), so a crash mid-write can't corrupt
 | Setting | Default | Meaning |
 |---|---|---|
 | `show_disconnected` | off | Also list unplugged / disabled endpoints. |
+| `boom3d_compatibility` | off | Accept an acknowledged output-switch request when the requested device is active and Windows defaults back to Boom3D's active virtual output. Input switches and backend errors retain normal checks. |
+
+### Using Boom3D
+
+Boom3D can switch the physical output and immediately restore **Speakers (Boom Audio)**
+as the Windows default to preserve global effects. Normal default-device verification
+then reports "Output device may not have changed" even though Boom switched outputs.
+
+Enable **Boom3D compatibility mode** to handle this case for both direct output
+switches and profile loading. The virtual default must have `Boom Audio`, `Boom3D`,
+or `Boom 3D` in its endpoint name. Other defaults, unavailable targets, failed backend
+requests, input failures, and unreadable defaults still receive normal diagnostics.
+The confirmation says **switch requested (Boom3D)**: Windows exposes Boom's virtual
+default, so AudioCowboy cannot independently verify Boom's final physical output.
+The menu's default checkmark and saved snapshots continue to reflect the Windows
+default (Boom's virtual device), rather than guessing the physical output.
 
 ---
 
@@ -139,6 +159,7 @@ Run the offline tests (no Flow needed):
 
 ```powershell
 python tests\smoke_test.py
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
 Inspect live output against your real devices:
