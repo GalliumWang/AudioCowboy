@@ -4,6 +4,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -29,7 +30,8 @@ class Boom3DTests(unittest.TestCase):
                         "input": {"endpointId": "mic", "friendlyName": "Yeti"}}
 
     def invoke(self, method="set_default_output", params=None, enabled=True,
-               devices=None, active=None, outcomes=None, read_error=None):
+               devices=None, active=None, outcomes=None, read_error=None,
+               settings_in_request=True, saved_settings=None):
         devices = self.devices if devices is None else devices
         active = devices if active is None else active
         params = ["physical", "FiiO K11"] if params is None else params
@@ -47,9 +49,14 @@ class Boom3DTests(unittest.TestCase):
             return outcome
 
         settings = {} if enabled is None else {"boom3d_compatibility": enabled}
-        request = {"method": method, "parameters": params, "settings": settings}
+        request = {"method": method, "parameters": params}
+        if settings_in_request:
+            request["settings"] = settings
+        elif settings_in_request is None:
+            request["settings"] = None
         stdout, stderr = io.StringIO(), io.StringIO()
         with patch.object(sys, "argv", ["main.py", json.dumps(request)]), \
+                patch.object(main, "_saved_settings", return_value=saved_settings or {}), \
                 patch.object(audio, "get_devices", side_effect=get_devices), \
                 patch.object(audio, "set_default", side_effect=set_default) as setter, \
                 patch.object(main.profiles, "get_profile", return_value=self.profile), \
@@ -60,6 +67,29 @@ class Boom3DTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())  # also rejects multiple JSON payloads
         self.assertEqual(payload["method"], "Flow.Launcher.ShowMsg")
         return payload["parameters"], setter.call_args_list
+
+    def test_flow_action_without_settings_uses_saved_compatibility(self):
+        msg, _ = self.invoke(settings_in_request=False,
+                             saved_settings={"boom3d_compatibility": True})
+        self.assertEqual(msg[0], "Output switch requested (Boom3D)")
+
+    def test_flow_action_with_null_settings_uses_saved_compatibility(self):
+        msg, _ = self.invoke(settings_in_request=None,
+                             saved_settings={"boom3d_compatibility": True})
+        self.assertEqual(msg[0], "Output switch requested (Boom3D)")
+
+    def test_flow_profile_action_without_settings_uses_saved_compatibility(self):
+        msg, _ = self.invoke(method="load_profile", params=["Gaming"],
+                             settings_in_request=False,
+                             saved_settings={"boom3d_compatibility": True})
+        self.assertEqual(msg[0], "Profile requested (Boom3D): Gaming")
+
+    def test_explicit_request_settings_override_saved_compatibility(self):
+        for enabled in (None, False):
+            with self.subTest(enabled=enabled):
+                msg, _ = self.invoke(enabled=enabled,
+                                     saved_settings={"boom3d_compatibility": True})
+                self.assertEqual(msg[0], "Output device may not have changed")
 
     def test_strict_mode_is_default(self):
         for enabled in (None, False):
@@ -176,6 +206,60 @@ class Boom3DTests(unittest.TestCase):
         self.assertEqual(msg[0], "Applied profile: Gaming")
         self.assertIn("unverified", msg[1])
         self.assertTrue(msg[2].endswith("warning.png"))
+
+
+class SavedSettingsTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = self.tmp.name
+
+    def write_settings(self, root, value, raw=False):
+        path = os.path.join(root, "Settings", "Plugins", "AudioCowboy", "Settings.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8-sig") as fh:
+            fh.write(value if raw else json.dumps(value))
+
+    def test_flow_application_directory_takes_precedence(self):
+        expected = {"boom3d_compatibility": True, "show_disconnected": True}
+        self.write_settings(self.root, expected)
+        with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root,
+                                     "APPDATA": os.path.join(self.root, "elsewhere")}, clear=True):
+            self.assertEqual(main._saved_settings(), expected)
+
+    def test_portable_install_without_flow_environment(self):
+        self.write_settings(self.root, {"boom3d_compatibility": True})
+        plugin_dir = os.path.join(self.root, "Plugins", "AudioCowboy-1.0.7")
+        with patch.dict(os.environ, {}, clear=True), patch.object(main, "PLUGIN_DIR", plugin_dir):
+            self.assertTrue(main._saved_settings()["boom3d_compatibility"])
+
+    def test_appdata_fallback_when_running_from_source(self):
+        self.write_settings(os.path.join(self.root, "FlowLauncher"), {"boom3d_compatibility": True})
+        with patch.dict(os.environ, {"APPDATA": self.root}, clear=True), \
+                patch.object(main, "PLUGIN_DIR", os.path.join(self.root, "source")):
+            self.assertTrue(main._saved_settings()["boom3d_compatibility"])
+
+    def test_missing_settings_do_not_create_files(self):
+        with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root}, clear=True):
+            self.assertEqual(main._saved_settings(), {})
+        self.assertEqual(os.listdir(self.root), [])
+
+    def test_no_environment_or_installed_path_defaults_to_empty(self):
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(main, "PLUGIN_DIR", os.path.join(self.root, "source")):
+            self.assertEqual(main._saved_settings(), {})
+
+    def test_corrupt_or_non_object_settings_default_to_empty(self):
+        for value in ("{broken", "[]", "null", "true"):
+            with self.subTest(value=value):
+                self.write_settings(self.root, value, raw=True)
+                with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root}, clear=True):
+                    self.assertEqual(main._saved_settings(), {})
+
+    def test_unreadable_settings_default_to_empty(self):
+        with patch.dict(os.environ, {"FLOW_APPLICATION_DIRECTORY": self.root}, clear=True), \
+                patch("builtins.open", side_effect=PermissionError("locked")):
+            self.assertEqual(main._saved_settings(), {})
 
 
 if __name__ == "__main__":
