@@ -100,26 +100,30 @@ def _saved_settings():
     """Read Flow's settings when a V1 action/context request omits them.
 
     Flow sends settings with queries, but starts a separate process for actions
-    without copying those settings. Its application directory also covers portable
-    installations. Never create or modify configuration while reading it.
+    without copying those settings. Installed plugins and Settings share a user-data
+    root, including portable installs. FLOW_APPLICATION_DIRECTORY is the executable
+    installation directory, not the user-data directory. Never modify configuration.
     """
-    root = os.getenv("FLOW_APPLICATION_DIRECTORY")
-    if not root:
-        parent = os.path.dirname(PLUGIN_DIR)
-        if os.path.basename(parent).casefold() == "plugins":
-            root = os.path.dirname(parent)
-        else:
-            appdata = os.getenv("APPDATA")
-            if not appdata:
-                return {}
-            root = os.path.join(appdata, "FlowLauncher")
-    path = os.path.join(root, "Settings", "Plugins", profiles.PLUGIN_NAME, "Settings.json")
-    try:
-        with open(path, "r", encoding="utf-8-sig") as fh:
-            settings = json.load(fh)
-    except (OSError, ValueError):
-        return {}
-    return settings if isinstance(settings, dict) else {}
+    roots = []
+    parent = os.path.dirname(PLUGIN_DIR)
+    if os.path.basename(parent).casefold() == "plugins":
+        roots.append(os.path.dirname(parent))
+    appdata = os.getenv("APPDATA")
+    if appdata:
+        roaming = os.path.join(appdata, "FlowLauncher")
+        if roaming not in roots:
+            roots.append(roaming)
+    for root in roots:
+        path = os.path.join(root, "Settings", "Plugins", profiles.PLUGIN_NAME, "Settings.json")
+        try:
+            with open(path, "r", encoding="utf-8-sig") as fh:
+                settings = json.load(fh)
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return {}
+        return settings if isinstance(settings, dict) else {}
+    return {}
 
 
 class AudioCowboy(object):
