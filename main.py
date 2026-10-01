@@ -96,6 +96,32 @@ def _back_item():
     return drill("← Back", "Return to the main menu", "", ico=ICON_BACK, score=-100)
 
 
+def _saved_settings():
+    """Read Flow's settings when a V1 action/context request omits them.
+
+    Flow sends settings with queries, but starts a separate process for actions
+    without copying those settings. Its application directory also covers portable
+    installations. Never create or modify configuration while reading it.
+    """
+    root = os.getenv("FLOW_APPLICATION_DIRECTORY")
+    if not root:
+        parent = os.path.dirname(PLUGIN_DIR)
+        if os.path.basename(parent).casefold() == "plugins":
+            root = os.path.dirname(parent)
+        else:
+            appdata = os.getenv("APPDATA")
+            if not appdata:
+                return {}
+            root = os.path.join(appdata, "FlowLauncher")
+    path = os.path.join(root, "Settings", "Plugins", profiles.PLUGIN_NAME, "Settings.json")
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            settings = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return settings if isinstance(settings, dict) else {}
+
+
 class AudioCowboy(object):
     def __init__(self):
         try:
@@ -104,7 +130,8 @@ class AudioCowboy(object):
             req = {"method": "query", "parameters": [""]}
 
         self._emitted = False  # guard: at most one JSON object on stdout
-        self.settings = req.get("settings") or {}
+        request_settings = req.get("settings")
+        self.settings = request_settings if isinstance(request_settings, dict) else _saved_settings()
         self.include_inactive = bool(self.settings.get("show_disconnected", False))
         self.boom3d_compatibility = bool(self.settings.get("boom3d_compatibility", False))
 
