@@ -4,8 +4,8 @@
   "Name": "AudioCowboy",
   "Description": "Quickly switch the default audio input/output device, and save device profiles. Type 'ac' for a menu.",
   "Author": "True347",
-  "Version": "1.0.8",
-  "Language": "python",
+  "Version": "1.0.9",
+  "Language": "Python_v2",
   "Website": "https://github.com/GalliumWang/AudioCowboy",
   "IcoPath": "Images/app.png",
   "ExecuteFileName": "main.py"
