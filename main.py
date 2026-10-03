@@ -12,10 +12,10 @@ Flow.Launcher.ChangeQuery drill-down.
     ac s [name]     save current devices as a named profile
     ac p [filter]   list saved profiles -> Enter applies; right-click = Apply/Delete
 
-Flow Launcher V1 Python model: the request arrives as JSON in ``sys.argv[1]`` and the
-response is JSON on stdout. ``query``/``context_menu`` return a list (wrapped in
-``{"result": [...]}``); action methods perform a side effect and may emit ONE
-``Flow.Launcher.*`` follow-up request (we use ShowMsg for confirmations).
+The installed plugin uses Flow's Python_v2 protocol: a persistent process exchanges
+newline-delimited JSON-RPC over stdin/stdout. Switching hides Flow before touching
+audio; verification and the final notification follow. The V1 CLI request format is
+retained for offline tests and developer tools.
 """
 import os
 import sys
@@ -41,6 +41,7 @@ import profiles
 
 try:  # emit real UTF-8 so non-ASCII device names render correctly
     sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdin.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
@@ -127,9 +128,12 @@ def _saved_settings():
 
 
 class AudioCowboy(object):
-    def __init__(self):
+    def __init__(self, request=None, api=None):
+        self._api = api
+        self._results = []
         try:
-            req = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {"method": "query", "parameters": [""]}
+            req = request if request is not None else (
+                json.loads(sys.argv[1]) if len(sys.argv) > 1 else {"method": "query", "parameters": [""]})
         except (ValueError, IndexError):
             req = {"method": "query", "parameters": [""]}
 
@@ -146,6 +150,10 @@ class AudioCowboy(object):
             self._emit([])
             return
         try:
+            if api is not None and method in SWITCH_ACTIONS:
+                # V2 can call Flow before the audio work finishes. Do not use the
+                # action's final Hide response: the user may reopen Flow meanwhile.
+                api("Flow.Launcher.HideMainWindow", [])
             out = handler(*params)
         except Exception as exc:  # never let the plugin crash silently
             if method in ("query", "context_menu"):
@@ -163,6 +171,9 @@ class AudioCowboy(object):
         if self._emitted:
             return
         self._emitted = True
+        if self._api is not None:
+            self._results = results
+            return
         sys.stdout.write(json.dumps({"result": results}, ensure_ascii=False))
         sys.stdout.flush()  # Flow reads one payload off the pipe; don't rely on exit flush
 
@@ -170,6 +181,9 @@ class AudioCowboy(object):
         if self._emitted:
             return
         self._emitted = True
+        if self._api is not None:
+            self._api(method, parameters)
+            return
         sys.stdout.write(json.dumps({"method": method, "parameters": parameters}, ensure_ascii=False))
         sys.stdout.flush()
 
@@ -496,7 +510,7 @@ class AudioCowboy(object):
         except Exception as exc:
             self.show_msg("Failed to set %s device" % label.lower(), str(exc), _abs(ICON_ERROR))
             return
-        # Confirm via toast, then the window closes (like applying a profile). A backend
+        # Confirm via toast after verification. V2 already hid the window. A backend
         # reporting success is not proof: re-read the defaults and let that decide; the
         # backend's own return value is only the fallback when the read-back fails.
         verified = self._is_now_default(item_id, direction, comm=comm)
@@ -724,5 +738,93 @@ class AudioCowboy(object):
             self.show_msg("Profile not found", old, _abs(ICON_WARN))
 
 
+SWITCH_ACTIONS = frozenset(("set_default_output", "set_default_input",
+                            "set_default_comm", "load_profile"))
+
+
+class FlowV2(object):
+    """Flow's newline-delimited, bidirectional JSON-RPC transport.
+
+    AudioCowboy's handlers remain usable through the V1 CLI for offline tests.
+    A V2 action receives its complete parameters array as one RPC argument.
+    Public API calls are notifications, so Flow can hide while a handler is busy.
+    """
+    def __init__(self, input_stream=None, output_stream=None):
+        self.input = input_stream if input_stream is not None else sys.stdin
+        self.output = output_stream if output_stream is not None else sys.stdout
+        self.keep_open = False
+
+    def _write(self, payload):
+        self.output.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self.output.flush()
+
+    def api(self, method, parameters):
+        name = method.removeprefix("Flow.Launcher.")
+        if name == "ChangeQuery":
+            self.keep_open = True
+        self._write({"jsonrpc": "2.0", "method": name, "params": parameters})
+
+    @staticmethod
+    def _adapt_results(results):
+        for item in results:
+            action = item.get("JsonRPCAction")
+            if action and action["method"].startswith("Flow.Launcher."):
+                item["JsonRPCAction"] = {
+                    "method": "flow_action",
+                    "parameters": [action["method"], action["parameters"],
+                                   not action.get("DontHideAfterAction", False)]}
+        return results
+
+    def dispatch(self, method, parameters):
+        self.keep_open = False
+        if method in ("initialize", "reload_data", "close"):
+            return None
+        if method == "query":
+            query, settings = parameters
+            search = query.get("search", "")
+            plugin = AudioCowboy({"method": "query", "parameters": [search],
+                                 "settings": settings}, self.api)
+            return {"result": self._adapt_results(plugin._results)}
+        if method == "context_menu":
+            plugin = AudioCowboy({"method": method, "parameters": parameters}, self.api)
+            return {"result": self._adapt_results(plugin._results)}
+        args = parameters[0] if parameters else []
+        if method == "flow_action":
+            api_method, api_parameters, hide = args
+            self.api(api_method, api_parameters)
+            return {"hide": hide}
+        if method.startswith("_") or method not in (
+                "set_default_output", "set_default_input", "set_default_comm",
+                "load_profile", "save_profile", "delete_profile",
+                "delete_profile_relist", "rename_profile"):
+            raise LookupError("Unknown method: %s" % method)
+        AudioCowboy({"method": method, "parameters": args}, self.api)
+        return {"hide": method not in SWITCH_ACTIONS and not self.keep_open}
+
+    def run(self):
+        for line in self.input:
+            try:
+                request = json.loads(line)
+            except ValueError:
+                self._write({"jsonrpc": "2.0", "id": None,
+                             "error": {"code": -32700, "message": "Invalid JSON"}})
+                continue
+            if "method" not in request or request["method"] == "$/cancelRequest":
+                continue
+            try:
+                result = self.dispatch(request["method"], request.get("params") or [])
+                response = {"jsonrpc": "2.0", "id": request.get("id"), "result": result}
+            except Exception as exc:
+                response = {"jsonrpc": "2.0", "id": request.get("id"),
+                            "error": {"code": -32603, "message": str(exc)}}
+            if "id" in request:
+                self._write(response)
+            if request["method"] == "close":
+                break
+
+
 if __name__ == "__main__":
-    AudioCowboy()
+    if len(sys.argv) > 1:
+        AudioCowboy()
+    else:
+        FlowV2().run()
