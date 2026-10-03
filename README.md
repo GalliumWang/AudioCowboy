@@ -4,6 +4,11 @@ This fork of [True347/AudioCowboy](https://github.com/True347/AudioCowboy) adds 
 optional **Boom3D compatibility mode**. Install the fork's release, then enable
 **Boom3D compatibility mode** in Flow Settings → Plugins → AudioCowboy.
 
+From **v1.0.9**, selecting an output, input, communication device, or profile hides
+Flow immediately. Audio switching and verification continue, then Flow displays
+the result notification. Finishing a switch does not hide a window you have reopened.
+The plugin uses the `Python_v2` protocol supported by Flow 2.1.4.
+
 A [Flow Launcher](https://www.flowlauncher.com/) plugin to **quickly switch the default audio input/output device** and **save/load device profiles** — a rofi-style multi-layer menu under a single keyword.
 
 ```
@@ -150,7 +155,7 @@ To publish to the Flow plugin store, see [publish/PUBLISHING.md](publish/PUBLISH
 ## Development
 
 ```
-plugin.json          # manifest (keyword: ac, Language: python)
+plugin.json          # manifest (keyword: ac, Language: Python_v2)
 main.py              # JSON-RPC entry + router + actions
 audio.py             # pycaw backend
 profiles.py          # profiles.json CRUD (atomic, update-safe path)
@@ -177,12 +182,10 @@ python tests\inspect_actions.py     # save/load/delete in a temp dir (no-op swit
 
 ### Why one keyword instead of `aci`/`aco`/`acs`/`acp`?
 
-In Flow Launcher's V1 Python model (`Language: "python"`), the request the plugin
-receives **does not include which action keyword fired** — only the search text after
-it. So separate keywords couldn't be told apart on an empty query. A single keyword
-with sub-commands (`ac o`, `ac i`, …) is the robust choice and faithfully reproduces
-the original rofi single-entry, multi-layer menu. (Distinguishing keywords would
-require the newer `Python_v2` protocol.)
+The original V1 Python protocol did not include which action keyword fired, so
+AudioCowboy used one keyword with sub-commands (`ac o`, `ac i`, …). Version 1.0.9
+moves to `Python_v2` to hide Flow before audio operations finish, while preserving
+the existing single-entry menu and commands.
 
 ---
 
