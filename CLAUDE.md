@@ -31,7 +31,22 @@ There is no single-test runner; `smoke_test.py` calls its `test_*` functions dir
 as a subprocess exactly the way Flow does, so it catches wire-format regressions. Run it
 after any change to `main.py` / `audio.py` / `profiles.py`.
 
-## Runtime model (Flow Launcher V1 Python protocol)
+## Runtime model
+
+Since v1.0.9 the installed manifest uses `Python_v2`. `FlowV2` in `main.py`
+exchanges newline-delimited JSON-RPC over stdin/stdout in a persistent process.
+Queries receive `[query_object, settings]`; context menus receive `[context_data]`;
+actions receive `[parameters_array]`. Flow API calls are notifications with plain
+method names such as `HideMainWindow` or `ShowMsg`. Switching hides the main window
+before audio work and returns `{"hide": false}` so completion cannot hide a window
+the user reopened. Direct Flow menu actions are adapted to `flow_action`, preserving
+drill-down/relist behavior. No extra runtime dependency is required.
+
+The V1 CLI path below is retained for developer tools and offline regression tests.
+Run both `python tests/smoke_test.py` and
+`python -m unittest discover -s tests -p "test_*.py"` after runtime changes.
+
+### V1 CLI test compatibility
 
 Flow invokes `python main.py '<json-request>'` — the request is a single JSON arg in
 `sys.argv[1]`, and the response is a **single JSON object on stdout**. This shapes
