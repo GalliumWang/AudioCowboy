@@ -6,9 +6,10 @@ Switch the default audio output/input device and manage device profiles, all fro
 one action keyword (``ac``) with a rofi-style multi-layer menu built on
 Flow.Launcher.ChangeQuery drill-down.
 
-    ac              top menu: Output / Input / Profiles / Save
+    ac              top menu: Output / Input / Volume / Profiles / Save
     ac o [filter]   list output (render) devices  -> Enter sets default output
     ac i [filter]   list input  (capture) devices -> Enter sets default input
+    ac v            master output volume: 0 / 20 / 40 / 60 / 80 / 100 percent
     ac s [name]     save current devices as a named profile
     ac p [filter]   list saved profiles -> Enter applies; right-click = Apply/Delete
 
@@ -46,6 +47,7 @@ except Exception:
     pass
 
 KEYWORD = "ac"  # must match plugin.json "ActionKeyword"
+VOLUME_LEVELS = (0, 20, 40, 60, 80, 100)
 
 # Rename drill encodes "Old → New" in the query box; the arrow is the delimiter we split on.
 _RENAME_SEP = " → "
@@ -204,6 +206,8 @@ class AudioCowboy(object):
             return self._device_menu("render", rest)
         if head in ("i", "in", "input"):
             return self._device_menu("capture", rest)
+        if head in ("v", "vol", "volume", "音量"):
+            return self._volume_menu()
         if head in ("s", "save"):
             return self._save_menu(rest)
         if head in ("p", "profile", "profiles", "l", "load"):
@@ -258,14 +262,35 @@ class AudioCowboy(object):
         except audio.AudioError:
             pass  # show the menu anyway; device queries will report errors when used
 
-        # Fixed order via descending Score (Flow sorts by Score desc): Output > Input > Profile > Save.
+        # Fixed order via descending Score (Flow sorts by Score desc).
         return [
             drill("\U0001F50A  Output device", "Current: %s" % (out_name or "unknown"), "o ", ICON_OUT, score=40),
             drill("\U0001F3A4  Input device", "Current: %s" % (in_name or "unknown"), "i ", ICON_IN, score=30),
+            drill("\U0001F50A  Volume", "Set current output volume: 0 / 20 / 40 / 60 / 80 / 100%",
+                  "v ", ICON_OUT, score=25),
             drill("\U0001F4C1  Profiles", "Load a saved device profile", "p ", ICON_PROFILE, score=20),
             drill("\U0001F4BE  Save current as profile…",
                   "Snapshot the current input + output devices", "s ", ICON_SAVE, score=10),
         ]
+
+    def _volume_menu(self):
+        try:
+            state = audio.get_output_volume()
+        except audio.AudioBackendUnavailable:
+            return [self._backend_missing()]
+        except audio.AudioError as exc:
+            return [result("Could not read output volume", str(exc), ICON_ERROR), _back_item()]
+        current = state["percent"]
+        detail = "Current: %.0f%%%s   |   %s" % (
+            current, " (muted)" if state["muted"] else "", state["friendly"] or "Current output")
+        items = []
+        for index, level in enumerate(VOLUME_LEVELS):
+            selected = abs(current - level) < 0.5 and (level == 0 or not state["muted"])
+            items.append(result("%s%d%%" % ("✓  " if selected else "", level),
+                                detail, ICON_OUT, method="set_volume", params=[level],
+                                score=600 - index * 100))
+        items.append(_back_item())
+        return items
 
     def _device_menu(self, direction, filt):
         kind = "output" if direction == "render" else "input"
@@ -490,6 +515,27 @@ class AudioCowboy(object):
     # ------------------------------------------------------------------ #
     # actions
     # ------------------------------------------------------------------ #
+    def set_volume(self, percent):
+        if type(percent) is not int or percent not in VOLUME_LEVELS:
+            self.show_msg("Invalid volume preset", "Choose 0, 20, 40, 60, 80 or 100%", _abs(ICON_ERROR))
+            return
+        try:
+            state = audio.set_output_volume(percent)
+        except audio.AudioBackendUnavailable:
+            self._backend_missing_toast()
+            return
+        except Exception as exc:
+            self.show_msg("Could not set or verify output volume", str(exc), _abs(ICON_ERROR))
+            return
+        if abs(state["percent"] - percent) < 0.5 and (percent == 0 or not state["muted"]):
+            self.show_msg("Output volume set: %d%%" % percent,
+                          state["friendly"] or "Current output", _abs(ICON_OUT))
+        else:
+            self.show_msg("Output volume may not have changed",
+                          "Requested: %d%%   |   Current: %.0f%%%s" %
+                          (percent, state["percent"], " (muted)" if state["muted"] else ""),
+                          _abs(ICON_WARN))
+
     def set_default_output(self, item_id, friendly=""):
         self._apply_device(item_id, "render", friendly, "Output", role="all")
 
@@ -739,7 +785,7 @@ class AudioCowboy(object):
 
 
 SWITCH_ACTIONS = frozenset(("set_default_output", "set_default_input",
-                            "set_default_comm", "load_profile"))
+                            "set_default_comm", "load_profile", "set_volume"))
 
 
 class FlowV2(object):
@@ -795,7 +841,7 @@ class FlowV2(object):
             return {"hide": hide}
         if method.startswith("_") or method not in (
                 "set_default_output", "set_default_input", "set_default_comm",
-                "load_profile", "save_profile", "delete_profile",
+                "load_profile", "set_volume", "save_profile", "delete_profile",
                 "delete_profile_relist", "rename_profile"):
             raise LookupError("Unknown method: %s" % method)
         AudioCowboy({"method": method, "parameters": args}, self.api)
