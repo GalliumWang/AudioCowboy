@@ -42,6 +42,15 @@ before audio work and returns `{"hide": false}` so completion cannot hide a wind
 the user reopened. Direct Flow menu actions are adapted to `flow_action`, preserving
 drill-down/relist behavior. No extra runtime dependency is required.
 
+Since v1.0.10, `ac v` (`vol`/`volume`/`音量`) lists six output volume presets in
+ascending order. Explicit descending result scores preserve that order. `set_volume`
+uses the same early-hide behavior. `audio.get_output_volume` and
+`audio.set_output_volume` resolve the current default multimedia output through
+`GetSpeakers().EndpointVolume` for each request. Set volume with the 0-1 scalar API,
+unmute positive percentages, and read back the same endpoint before confirming.
+The target can be Boom3D's virtual output. Do not alter audio profiles or device
+selection when setting volume. Run `tests/test_volume.py` with the regression suite.
+
 The V1 CLI path below is retained for developer tools and offline regression tests.
 Run both `python tests/smoke_test.py` and
 `python -m unittest discover -s tests -p "test_*.py"` after runtime changes.
