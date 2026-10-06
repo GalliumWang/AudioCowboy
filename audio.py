@@ -120,6 +120,57 @@ def set_default(item_id, role="all"):
     raise AudioBackendUnavailable("pycaw backend unavailable")
 
 
+def _output_volume_endpoint():
+    """Resolve the current multimedia output each time, including virtual outputs."""
+    from pycaw.pycaw import AudioUtilities
+    device = AudioUtilities.GetSpeakers()
+    if device is None:
+        raise AudioError("No default output device is available")
+    return device, device.EndpointVolume
+
+
+def _volume_state(device, endpoint):
+    return {"id": _pycaw_device_id(device),
+            "friendly": getattr(device, "FriendlyName", None) or _pycaw_device_id(device),
+            "percent": float(endpoint.GetMasterVolumeLevelScalar()) * 100.0,
+            "muted": bool(endpoint.GetMute())}
+
+
+def get_output_volume():
+    """Read Windows master volume (0-100) and mute state for the current output."""
+    if not _pycaw_ready():
+        raise AudioBackendUnavailable("pycaw backend unavailable")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            device, endpoint = _output_volume_endpoint()
+            return _volume_state(device, endpoint)
+        except Exception as exc:
+            raise AudioError("Could not read output volume: %s" % exc) from exc
+
+
+def set_output_volume(percent):
+    """Set a percentage, unmute positive levels, and read back the same endpoint.
+
+    Resolve at action time so a default changed since opening the menu is respected.
+    Zero lowers the scalar to zero; it does not change the endpoint's mute flag.
+    """
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)) or not 0 <= percent <= 100:
+        raise ValueError("Volume must be a number between 0 and 100")
+    if not _pycaw_ready():
+        raise AudioBackendUnavailable("pycaw backend unavailable")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            device, endpoint = _output_volume_endpoint()
+            endpoint.SetMasterVolumeLevelScalar(percent / 100.0, None)
+            if percent > 0:
+                endpoint.SetMute(0, None)
+            return _volume_state(device, endpoint)
+        except Exception as exc:
+            raise AudioError("Could not set or verify output volume: %s" % exc) from exc
+
+
 def split_by_direction(devices):
     render = [d for d in devices if d["direction"] == "render"]
     capture = [d for d in devices if d["direction"] == "capture"]
