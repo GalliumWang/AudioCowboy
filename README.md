@@ -10,7 +10,7 @@ the result notification. Finishing a switch does not hide a window you have reop
 The plugin uses the `Python_v2` protocol supported by Flow 2.1.4.
 
 From **v1.0.10**, use **`ac v`** (`ac vol`, `ac volume`, or `ac 音量`) to choose
-**0%, 20%, 40%, 60%, 80%, or 100%** in that order. Click or press Enter to set the
+**0%, 10%, 20%, 30%, 40%, 50%, 60%, 80%, or 100%** in that order. Click or press Enter to set the
 Windows master volume of the current default output. Positive presets also unmute
 the output. With Boom3D running, this controls the Windows volume of its default
 virtual output. The menu shows the current volume and a checkmark for a matching
@@ -22,7 +22,7 @@ A [Flow Launcher](https://www.flowlauncher.com/) plugin to **quickly switch the 
 ac            →  🔊 Output   🎤 Input   🔊 Volume   📁 Profiles   💾 Save
 ac o [filter] →  pick the default output (playback) device
 ac i [filter] →  pick the default input  (recording) device
-ac v          →  set output volume: 0 / 20 / 40 / 60 / 80 / 100%
+ac v          →  set output volume: 0 / 10 / 20 / 30 / 40 / 50 / 60 / 80 / 100%
 ac s <name>   →  save the current input+output as a named profile
 ac p [filter] →  list profiles → Enter applies; right-click → Apply / Rename / Delete
 ac r [filter] →  rename a profile (pick one, then type the new name)
@@ -76,7 +76,7 @@ no setup step. Restart Flow after updating and type `ac`.
 | `ac o` | List active **output** devices. The current default is marked `✓`. Enter sets a new default. |
 | `ac o hdmi` | Same, filtered to devices whose name contains "hdmi". |
 | `ac i` | List active **input** devices; Enter sets the default. |
-| `ac v` | List output volume presets in ascending order: **0 / 20 / 40 / 60 / 80 / 100%**. Click or Enter applies; nonzero levels unmute. Aliases: `ac vol`, `ac volume`, `ac 音量`. |
+| `ac v` | List output volume presets in ascending order: **0 / 10 / 20 / 30 / 40 / 50 / 60 / 80 / 100%**. Click or Enter applies; nonzero levels unmute. Aliases: `ac vol`, `ac volume`, `ac 音量`. |
 | `ac s Gaming` | Save the current output+input devices as a profile named "Gaming" (overwrites if it exists). |
 | `ac p` | List saved profiles. Enter applies a profile; **Shift+Enter** opens its context menu (Apply / Rename / Delete). A `⚠` marks a profile whose device is currently unplugged. The list also offers **Rename** and **Delete** entries. |
 | `ac r` | Pick a profile, then type a new name (`Gaming → Streaming`) and press Enter. Renaming onto a name already in use is refused. |
