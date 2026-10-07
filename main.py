@@ -9,7 +9,7 @@ Flow.Launcher.ChangeQuery drill-down.
     ac              top menu: Output / Input / Volume / Profiles / Save
     ac o [filter]   list output (render) devices  -> Enter sets default output
     ac i [filter]   list input  (capture) devices -> Enter sets default input
-    ac v            master output volume: 0 / 20 / 40 / 60 / 80 / 100 percent
+    ac v            master output volume: 0 / 10 / 20 / 30 / 40 / 50 / 60 / 80 / 100 percent
     ac s [name]     save current devices as a named profile
     ac p [filter]   list saved profiles -> Enter applies; right-click = Apply/Delete
 
@@ -47,7 +47,7 @@ except Exception:
     pass
 
 KEYWORD = "ac"  # must match plugin.json "ActionKeyword"
-VOLUME_LEVELS = (0, 20, 40, 60, 80, 100)
+VOLUME_LEVELS = (0, 10, 20, 30, 40, 50, 60, 80, 100)
 
 # Rename drill encodes "Old → New" in the query box; the arrow is the delimiter we split on.
 _RENAME_SEP = " → "
@@ -266,7 +266,7 @@ class AudioCowboy(object):
         return [
             drill("\U0001F50A  Output device", "Current: %s" % (out_name or "unknown"), "o ", ICON_OUT, score=40),
             drill("\U0001F3A4  Input device", "Current: %s" % (in_name or "unknown"), "i ", ICON_IN, score=30),
-            drill("\U0001F50A  Volume", "Set current output volume: 0 / 20 / 40 / 60 / 80 / 100%",
+            drill("\U0001F50A  Volume", "Set current output volume: 0 / 10 / 20 / 30 / 40 / 50 / 60 / 80 / 100%",
                   "v ", ICON_OUT, score=25),
             drill("\U0001F4C1  Profiles", "Load a saved device profile", "p ", ICON_PROFILE, score=20),
             drill("\U0001F4BE  Save current as profile…",
@@ -288,7 +288,7 @@ class AudioCowboy(object):
             selected = abs(current - level) < 0.5 and (level == 0 or not state["muted"])
             items.append(result("%s%d%%" % ("✓  " if selected else "", level),
                                 detail, ICON_OUT, method="set_volume", params=[level],
-                                score=600 - index * 100))
+                                score=(len(VOLUME_LEVELS) - index) * 100))
         items.append(_back_item())
         return items
 
@@ -517,7 +517,7 @@ class AudioCowboy(object):
     # ------------------------------------------------------------------ #
     def set_volume(self, percent):
         if type(percent) is not int or percent not in VOLUME_LEVELS:
-            self.show_msg("Invalid volume preset", "Choose 0, 20, 40, 60, 80 or 100%", _abs(ICON_ERROR))
+            self.show_msg("Invalid volume preset", "Choose 0, 10, 20, 30, 40, 50, 60, 80 or 100%", _abs(ICON_ERROR))
             return
         try:
             state = audio.set_output_volume(percent)
