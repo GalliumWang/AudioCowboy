@@ -26,12 +26,13 @@ class VolumeMenuTests(unittest.TestCase):
 
     def test_presets_are_ordered_and_wire_actions_match(self):
         items = self.query("v")
-        presets = items[:6]
-        self.assertEqual([r["Title"] for r in presets], ["0%", "20%", "✓  40%", "60%", "80%", "100%"])
-        self.assertEqual([r["JsonRPCAction"]["parameters"] for r in presets], [[n] for n in (0, 20, 40, 60, 80, 100)])
-        self.assertEqual([r["JsonRPCAction"]["method"] for r in presets], ["set_volume"] * 6)
+        presets = items[:9]
+        self.assertEqual([r["Title"] for r in presets], ["0%", "10%", "20%", "30%", "✓  40%", "50%", "60%", "80%", "100%"])
+        self.assertEqual([r["JsonRPCAction"]["parameters"] for r in presets], [[n] for n in (0, 10, 20, 30, 40, 50, 60, 80, 100)])
+        self.assertEqual([r["JsonRPCAction"]["method"] for r in presets], ["set_volume"] * 9)
         self.assertEqual(sorted(presets, key=lambda r: r["Score"], reverse=True), presets)
         self.assertEqual(items[-1]["Title"], "← Back")
+        self.assertGreater(presets[-1]["Score"], items[-1]["Score"])
 
     def test_aliases(self):
         for keyword in ("v", "vol", "volume", "音量", "V"):
@@ -40,8 +41,8 @@ class VolumeMenuTests(unittest.TestCase):
 
     def test_muted_nonzero_volume_is_not_marked_current(self):
         items = self.query("v", state(40, True))
-        self.assertEqual(items[2]["Title"], "40%")
-        self.assertIn("muted", items[2]["SubTitle"])
+        self.assertEqual(items[4]["Title"], "40%")
+        self.assertIn("muted", items[4]["SubTitle"])
 
     def test_top_menu_drills_into_volume_and_stays_open(self):
         rpc = main.FlowV2(output_stream=io.StringIO())
@@ -83,8 +84,8 @@ class VolumeActionTests(unittest.TestCase):
         self.assertEqual([m["method"] for m in messages], ["HideMainWindow", "ShowMsg"])
         return messages[1]["params"], setter
 
-    def test_all_six_presets_hide_before_setting_and_confirm(self):
-        for percent in (0, 20, 40, 60, 80, 100):
+    def test_all_nine_presets_hide_before_setting_and_confirm(self):
+        for percent in (0, 10, 20, 30, 40, 50, 60, 80, 100):
             with self.subTest(percent=percent):
                 msg, setter = self.invoke(percent)
                 setter.assert_called_once_with(percent)
@@ -110,7 +111,7 @@ class VolumeActionTests(unittest.TestCase):
         self.assertEqual(msg[0], "Output volume set: 0%")
 
     def test_invalid_presets_never_touch_audio(self):
-        for value in (-20, 30, 120, "60", True, False, 60.0):
+        for value in (-20, 35, 120, "60", True, False, 60.0):
             with self.subTest(value=value):
                 msg, setter = self.invoke(value)
                 self.assertEqual(msg[0], "Invalid volume preset")
@@ -145,7 +146,7 @@ class VolumeBackendTests(unittest.TestCase):
     def test_scalar_percentage_conversion_and_readback(self):
         with patch.object(audio, "_pycaw_ready", return_value=True), \
                 patch.object(audio, "_output_volume_endpoint", return_value=(self.device, self.endpoint)):
-            for percent in (0, 20, 40, 60, 80, 100):
+            for percent in (0, 10, 20, 30, 40, 50, 60, 80, 100):
                 result = audio.set_output_volume(percent)
                 self.endpoint.SetMasterVolumeLevelScalar.assert_called_with(percent / 100.0, None)
                 self.assertAlmostEqual(result["percent"], percent)
